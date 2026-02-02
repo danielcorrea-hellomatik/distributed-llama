@@ -2,7 +2,9 @@
 #define TOKENIZER_HPP
 
 #include <cstdio>
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 typedef struct {
@@ -39,8 +41,8 @@ private:
     unsigned int specialVocabSize;
     float *vocabScores;
     unsigned int *vocabLength;
-    TokenIndex *regularVocab;
     TokenIndex *specialVocab;
+    std::unordered_map<uint64_t, std::vector<int>> regularVocab;
     size_t strBufferSize;
     char *strBuffer;
     char *utf8Buffer;

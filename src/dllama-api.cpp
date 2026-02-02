@@ -295,6 +295,70 @@ void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, co
     }
 }
 
+static bool tryParseJsonObject(const std::string &text, json &out) {
+    json parsed = json::parse(text, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object())
+        return false;
+    out = std::move(parsed);
+    return true;
+}
+
+static bool tryFindJsonFragmentAtEnd(const std::string &text, json &out) {
+    if (tryParseJsonObject(text, out))
+        return true;
+
+    bool inString = false;
+    int depth = 0;
+    size_t end = std::string::npos;
+
+    for (size_t i = text.size(); i-- > 0;) {
+        char c = text[i];
+        if (c == '"') {
+            size_t backslashes = 0;
+            for (size_t j = i; j > 0 && text[j - 1] == '\\'; j--)
+                backslashes++;
+            if ((backslashes % 2) == 0)
+                inString = !inString;
+            continue;
+        }
+        if (inString)
+            continue;
+        if (c == '}') {
+            if (end == std::string::npos)
+                end = i;
+            depth++;
+            continue;
+        }
+        if (c == '{') {
+            if (depth == 0)
+                continue;
+            depth--;
+            if (depth == 0 && end != std::string::npos) {
+                std::string candidate = text.substr(i, end - i + 1);
+                if (tryParseJsonObject(candidate, out))
+                    return true;
+                end = std::string::npos;
+            }
+        }
+    }
+    return false;
+}
+
+static std::string tryBuildToolsSystemPrompt(const std::vector<Tool> &tools, const ToolChoice &choice) {
+    json toolJson = tools;
+    std::string prompt = "You have access to the following tools:\n";
+    prompt += toolJson.dump();
+    prompt += "\n\nWhen you decide to call a tool, respond with a JSON object in this format:\n";
+    prompt += "{\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"tool_name\",\"arguments\":\"{...}\"}}]}";
+    if (choice.kind == TOOL_CHOICE_NONE)
+        prompt += "\nDo not call any tools.";
+    else if (choice.kind == TOOL_CHOICE_REQUIRED)
+        prompt += "\nYou must call a tool.";
+    else if (choice.kind == TOOL_CHOICE_NAMED)
+        prompt += "\nYou must call the tool named: " + choice.tool_name + ".";
+    return prompt;
+}
+
 class NaiveCacheItem {
 public:
     pos_t endPos;
@@ -380,7 +444,8 @@ public:
         }
 
         GeneratedChat inputPrompt = templateGenerator->generate(nInputItems, inputItems, true);
-        printf("🔹%s🔸", inputPrompt.content);
+        printf("🔹\033[34m%s", inputPrompt.content);
+        fflush(stdout);
 
         int nPromptTokens;
         std::unique_ptr<int[]> promptTokensPtr(new int[inputPrompt.length + 2]);
@@ -409,6 +474,9 @@ public:
                 writeChatCompletionChunk(request, inputPrompt.publicPrompt, false);
             buffer += inputPrompt.publicPrompt;
         }
+
+        printf("(%d tokens)\033\n[0m🔸", promptEndPos - startPos);
+        fflush(stdout);
 
         NnUint pos = startPos;
         int token;
@@ -466,19 +534,30 @@ public:
             if (eosType == EOS) break;
         }
 
-        ChatMessage chatMessage("assistant", buffer);
+        ChatMessage reply("assistant", buffer);
         if (pos == header->seqLen) {
             naiveCache.clear();
         } else {
-            naiveCache.push(NaiveCacheItem(pos, chatMessage));
+            naiveCache.push(NaiveCacheItem(pos, reply));
         }
 
         if (params.stream) {
             writeChatCompletionChunk(request, "", true);
         } else {
+            Choice choice(reply);
+
+            if (!params.tools.empty()) {
+                std::vector<ToolCall> parsedToolCalls;
+                json tempJson;
+                if (tryFindJsonFragmentAtEnd(buffer, tempJson) &&
+                    tryParseToolCallsFromJson(tempJson, parsedToolCalls)) {
+                    choice.message.tool_calls = parsedToolCalls;
+                    choice.finish_reason = "tool_calls";
+                }
+            }
+
             int nCompletionTokens = pos - promptEndPos;
             ChatUsage usage(nPromptTokens, nCompletionTokens, nPromptTokens + nCompletionTokens);
-            Choice choice(chatMessage);
             ChatCompletion completion(choice, usage);
             std::string chatJson = ((json)completion).dump();
             request.writeJson(chatJson);
@@ -489,32 +568,16 @@ public:
 
 private:
     InferenceParams parseRequest(HttpRequest& request) {
-        InferenceParams params;
-        params.temperature = args->temperature;
-        params.top_p = args->topp;
-        params.seed = args->seed;
-        params.stream = false;
-        params.messages = parseChatMessages(request.parsedJson["messages"]);
-        params.max_tokens = -1;
-
-        if (request.parsedJson.contains("stream")) {
-            params.stream = request.parsedJson["stream"].get<bool>();
-        }
-        if (request.parsedJson.contains("temperature")) {
-            params.temperature = request.parsedJson["temperature"].template get<float>();
-        }
-        if (request.parsedJson.contains("seed")) {
-            params.seed = request.parsedJson["seed"].template get<unsigned long long>();
-            sampler->setSeed(params.seed);
-        }
-        if (request.parsedJson.contains("max_tokens")) {
-            params.max_tokens = request.parsedJson["max_tokens"].template get<int>();
-        }
-        if (request.parsedJson.contains("stop")) {
-            params.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
-        } else {
-            const std::string defaultStop = "<|eot_id|>";
-            params.stop = std::vector<std::string>{defaultStop};
+        InferenceParams params = parseInferenceParams(
+            request.parsedJson,
+            args->temperature,
+            args->topp,
+            args->seed);
+        sampler->setSeed(params.seed);
+        if (!params.tools.empty()) {
+            std::string prompt = tryBuildToolsSystemPrompt(params.tools, params.tool_choice);
+            ChatMessage toolMessage("system", prompt);
+            params.messages.insert(params.messages.begin(), toolMessage);
         }
         return params;
     }

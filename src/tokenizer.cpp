@@ -39,6 +39,16 @@ int compareTokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
+static uint64_t calcStringHash(const char *s) {
+    // FNV-1a 64-bit
+    uint64_t h = 1469598103934665603ull;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char*>(s); *p; ++p) {
+        h ^= static_cast<uint64_t>(*p);
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
 Tokenizer::Tokenizer(const char* tokenizerPath)
     : eosTokenIds() {
     bosId = -1;
@@ -139,12 +149,11 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     regularVocabSize = bosId;
     specialVocabSize = vocabSize - regularVocabSize;
 
-    regularVocab = new TokenIndex[regularVocabSize];
+    regularVocab.reserve(regularVocabSize * 2);
     for (int i = 0; i < regularVocabSize; i++) {
-        regularVocab[i].str = vocab[i];
-        regularVocab[i].id = i;
+        uint64_t h = calcStringHash(vocab[i]);
+        regularVocab[h].push_back(i);
     }
-    qsort(regularVocab, regularVocabSize, sizeof(TokenIndex), compareTokens);
 
     specialVocab = new TokenIndex[specialVocabSize];
     for (int i = 0; i < specialVocabSize; i++) {
@@ -171,7 +180,6 @@ Tokenizer::~Tokenizer() {
     delete[] vocab;
     delete[] vocabLength;
     delete[] vocabScores;
-    delete[] regularVocab;
     delete[] specialVocab;
     delete[] strBuffer;
     delete[] utf8Buffer;
@@ -204,9 +212,17 @@ int Tokenizer::findSpecialTokenStartWith(char *piece) {
 }
 
 int Tokenizer::findRegularToken(char *piece) {
-    TokenIndex tok = { .str = piece };
-    TokenIndex *res = (TokenIndex*)bsearch(&tok, regularVocab, regularVocabSize, sizeof(TokenIndex), compareTokens);
-    return res != NULL ? res->id : -1;
+    uint64_t h = calcStringHash(piece);
+    auto it = regularVocab.find(h);
+    if (it == regularVocab.end())
+        return -1;
+    const std::vector<int> &candidates = it->second;
+    for (size_t i = 0; i < candidates.size(); i++) {
+        int id = candidates[i];
+        if (strcmp(vocab[id], piece) == 0)
+            return id;
+    }
+    return -1;
 }
 
 bool Tokenizer::isEos(int token) {
@@ -347,14 +363,23 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool isStart, bool
     assert(strLen == 0);
 
     // merge the best consecutive pair each iteration, according the scores in vocab_scores
-    while (1) {
+    for (;;) {
         float best_score = -1e10;
         int best_id = -1;
         int best_idx = -1;
 
-        for (int i=0; i < (*nTokens-1); i++) {
-            // check if we can merge the pair (tokens[i], tokens[i+1])
-            snprintf(strBuffer, strBufferSize, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
+        for (int i = 0; i < (*nTokens - 1); i++) {
+            int t0 = tokens[i];
+            int t1 = tokens[i + 1];
+            unsigned int len0 = vocabLength[t0];
+            unsigned int len1 = vocabLength[t1];
+            if (len0 + len1 > maxTokenLength)
+                continue;
+
+            memcpy(strBuffer, vocab[t0], len0);
+            memcpy(strBuffer + len0, vocab[t1], len1);
+            strBuffer[len0 + len1] = '\0';
+
             int id = findRegularToken(strBuffer);
             if (id != -1 && vocabScores[id] > best_score) {
                 // this merge pair exists in vocab! record its score and position
@@ -587,6 +612,8 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
                 buffer += items[i].message + eos;
             } else if (items[i].role == "user") {
                 buffer += "[INST] " + items[i].message + " [/INST]" + eos;
+            } else if (items[i].role == "tool") {
+                buffer += "[INST] Tool output:\n" + items[i].message + " [/INST]" + eos;
             }
         }
     } else if (type == TEMPLATE_LLAMA3) {
@@ -605,6 +632,8 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
                 buffer += "<｜User｜>" + items[i].message;
             } else if (items[i].role == "assistant") {
                 buffer += "<｜Assistant｜>" + items[i].message;
+            } else if (items[i].role == "tool") {
+                buffer += "<｜User｜>" + std::string("Tool output:\n") + items[i].message;
             }
         }
         if (appendGenerationPrompt) {
@@ -619,6 +648,8 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
                 buffer += "<|im_start|>user\n" + items[i].message + "<|im_end|>\n";
             } else if (items[i].role == "assistant") {
                 buffer += "<|im_start|>assistant\n" + items[i].message + "<|im_end|>\n";
+            } else if (items[i].role == "tool") {
+                buffer += "<|im_start|>tool\n" + items[i].message + "<|im_end|>\n";
             }
             if (appendGenerationPrompt)
                 buffer += "<|im_start|>assistant\n";
