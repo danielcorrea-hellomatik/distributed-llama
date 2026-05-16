@@ -548,6 +548,61 @@ void NnNetwork::readMany(NnUint n, NnSocketIo *ios) {
     } while (isReading);
 }
 
+void NnNetwork::writeReadMany(NnUint nWrite, NnSocketIo *writeIos, NnUint nRead, NnSocketIo *readIos) {
+    for (NnUint i = 0; i < nWrite; i++) {
+        assert(writeIos[i].socketIndex < nSockets);
+        sentBytes[writeIos[i].socketIndex] += writeIos[i].size;
+    }
+    for (NnUint i = 0; i < nRead; i++) {
+        assert(readIos[i].socketIndex < nSockets);
+        recvBytes[readIos[i].socketIndex] += readIos[i].size;
+    }
+
+    bool active;
+    do {
+        active = false;
+        for (NnUint i = 0; i < nWrite; i++) {
+            NnSocketIo *io = &writeIos[i];
+            if (io->size > 0) {
+                active = true;
+                int socket = sockets[io->socketIndex];
+                ssize_t chunkSize = io->size > MAX_CHUNK_SIZE ? MAX_CHUNK_SIZE : io->size;
+                ssize_t s = send(socket, (const char*)io->data, chunkSize, 0);
+                if (s < 0) {
+                    if (isEagainError())
+                        ; /* skip; advance reads */
+                    else
+                        throw NnTransferSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                } else if (s == 0) {
+                    throw NnTransferSocketException(0, "Socket closed");
+                } else {
+                    io->size -= s;
+                    io->data = (char*)io->data + s;
+                }
+            }
+        }
+        for (NnUint i = 0; i < nRead; i++) {
+            NnSocketIo *io = &readIos[i];
+            if (io->size > 0) {
+                active = true;
+                int socket = sockets[io->socketIndex];
+                ssize_t r = recv(socket, (char*)io->data, io->size, 0);
+                if (r < 0) {
+                    if (isEagainError())
+                        ; /* skip; advance writes */
+                    else
+                        throw NnTransferSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                } else if (r == 0) {
+                    throw NnTransferSocketException(0, "Socket closed");
+                } else {
+                    io->size -= r;
+                    io->data = (char*)io->data + r;
+                }
+            }
+        }
+    } while (active);
+}
+
 void NnNetwork::getStats(NnSize *sentBytes, NnSize *recvBytes) {
     *sentBytes = 0;
     *recvBytes = 0;
@@ -599,31 +654,36 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint
     if (nSocketsPerThread == 0) return;
     NnSize sliceBytes = nBytes / nNodes;
 
-    std::vector<NnSocketIo> ios(nSocketsPerThread);
+    bool doWrite = !onlyFromWorkerToRoot || isWorker;
+    bool doRead  = !onlyFromWorkerToRoot || !isWorker;
 
-    if (!onlyFromWorkerToRoot || isWorker) {
+    std::vector<NnSocketIo> writeIos(doWrite ? nSocketsPerThread : 0);
+    std::vector<NnSocketIo> readIos(doRead ? nSocketsPerThread : 0);
+
+    if (doWrite) {
         NnByte *mySliceData = &buffer[sliceBytes * nodeIndex];
-
         for (NnUint i = 0; i < nSocketsPerThread; i++) {
             NnUint socketIndex = threadIndex + i * nThreads;
-            ios[i].socketIndex = socketIndex;
-            ios[i].data = mySliceData;
-            ios[i].size = sliceBytes;
+            writeIos[i].socketIndex = socketIndex;
+            writeIos[i].data = mySliceData;
+            writeIos[i].size = sliceBytes;
         }
-        network->writeMany(nSocketsPerThread, &ios[0]);
     }
-
-    if (!onlyFromWorkerToRoot || !isWorker) {
+    if (doRead) {
         for (NnUint i = 0; i < nSocketsPerThread; i++) {
             NnUint socketIndex = threadIndex + i * nThreads;
             NnUint sliceIndex = socketIndex >= nodeIndex ? socketIndex + 1 : socketIndex;
             NnByte *sliceData = &buffer[sliceBytes * sliceIndex];
-            ios[i].socketIndex = socketIndex;
-            ios[i].data = sliceData;
-            ios[i].size = sliceBytes;
+            readIos[i].socketIndex = socketIndex;
+            readIos[i].data = sliceData;
+            readIos[i].size = sliceBytes;
         }
-        network->readMany(nSocketsPerThread, &ios[0]);
     }
+
+    network->writeReadMany(
+        doWrite ? nSocketsPerThread : 0, doWrite ? &writeIos[0] : nullptr,
+        doRead  ? nSocketsPerThread : 0, doRead  ? &readIos[0]  : nullptr
+    );
 }
 
 NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {

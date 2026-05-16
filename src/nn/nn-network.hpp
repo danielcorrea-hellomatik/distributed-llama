@@ -65,6 +65,7 @@ public:
     void writeMany(NnUint n, NnSocketIo *ios);
     void writeAll(void *data, NnSize size);
     void readMany(NnUint n, NnSocketIo *ios);
+    void writeReadMany(NnUint nWrite, NnSocketIo *writeIos, NnUint nRead, NnSocketIo *readIos);
     void getStats(NnSize *sentBytes, NnSize *recvBytes);
     void resetStats();
 };
