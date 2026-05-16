@@ -572,13 +572,16 @@ static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, N
         NnUint nSocketsPerThread = network->nSockets / nThreads + (network->nSockets % nThreads > threadIndex ? 1 : 0);
         if (nSocketsPerThread == 0) return;
 
-        std::vector<NnSocketIo> ios(nSocketsPerThread);
+        constexpr NnUint kStackIos = 16;
+        NnSocketIo iosStack[kStackIos];
+        NnSocketIo *ios = (nSocketsPerThread <= kStackIos) ? iosStack : new NnSocketIo[nSocketsPerThread];
         for (NnUint i = 0; i < nSocketsPerThread; i++) {
             ios[i].socketIndex = threadIndex + i * nThreads;
             ios[i].data = buffer;
             ios[i].size = nBytes;
         }
         network->writeMany(nSocketsPerThread, &ios[0]);
+        if (ios != iosStack) delete[] ios;
     } else {
         // worker
 
@@ -599,7 +602,11 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint
     if (nSocketsPerThread == 0) return;
     NnSize sliceBytes = nBytes / nNodes;
 
-    std::vector<NnSocketIo> ios(nSocketsPerThread);
+    // Stack-allocated iovec array for the common small case; heap fallback
+    // only when a thread happens to own more peers than fit on the stack.
+    constexpr NnUint kStackIos = 16;
+    NnSocketIo iosStack[kStackIos];
+    NnSocketIo *ios = (nSocketsPerThread <= kStackIos) ? iosStack : new NnSocketIo[nSocketsPerThread];
 
     if (!onlyFromWorkerToRoot || isWorker) {
         NnByte *mySliceData = &buffer[sliceBytes * nodeIndex];
@@ -624,6 +631,8 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint
         }
         network->readMany(nSocketsPerThread, &ios[0]);
     }
+
+    if (ios != iosStack) delete[] ios;
 }
 
 NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
