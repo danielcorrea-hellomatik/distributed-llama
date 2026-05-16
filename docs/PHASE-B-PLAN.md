@@ -361,6 +361,101 @@ Chaos / failure:
 - **After B6**: if cluster doesn't pass the 60-minute soak, do not
   merge regardless of tok/s gain.
 
+## 7b. Implementation blueprints to lift (from external survey)
+
+No one has published an exact CPU + `std::atomic` port of FlashOverlap.
+This project is therefore novel applied work. However, the design is a
+combination of four open-source codebases, each contributing one piece:
+
+| Source | Contributes | License | URL |
+|--------|-------------|---------|-----|
+| FlashOverlap | atomic counter signalling pattern (`fetch_add(release)` / `load(acquire)`) | open | https://github.com/infinigence/FlashOverlap (`wait.cuh`, `overlap_impl.cu`) |
+| CoCoNet | three-level tiling scheduler (buffer-tile → rank-chunk → channel-chunk); first-tile latency, later tiles bandwidth | MIT | https://github.com/parasailteam/coconet |
+| vLLM DBO (PR #23693) | CPU thread-barrier pattern between compute and drain (`UBatchContext` + `dbo_yield`) | Apache-2 | https://github.com/vllm-project/vllm/pull/23693/files |
+| Horovod | tensor-fusion buffer coalescing for small tiles over Ethernet/MPI | open | https://github.com/horovod/horovod |
+
+Concrete patterns to copy:
+
+**a) Tile-ready signal** — port of FlashOverlap `wait.cuh`:
+
+```cpp
+// Producer (matmul epilogue, after writing tile T's output rows):
+tile_counter.fetch_add(1, std::memory_order_release);
+
+// Consumer (network drain thread):
+while (tile_counter.load(std::memory_order_acquire) < N) {
+#if defined(__aarch64__)
+    asm volatile ("yield" ::: "memory");
+#endif
+}
+```
+
+On ARMv8/A76 these compile to `STLR` (release) and `LDAR` (acquire),
+which are essentially free.
+
+**b) Tile sizing** — "wave-equal split" from CoCoNet / TokenWeave:
+
+```
+tile_rows = ceil(out_rows / (compute_time_per_row / send_time_per_row))
+```
+
+So that compute-of-tile-K ≈ send-of-tile-(K-1). For our cluster on
+GbE at ~118 MB/s and Pi 5 matmul throughput ~3 GB/s effective on
+Q40, the ratio is roughly 25:1 — meaning we want the COMPUTE tile to
+be ~25× the byte-size of the SEND tile. With 4 tiles per layer, this
+balances naturally for the dominant matmuls.
+
+**c) Coalesce small tiles** — Horovod tensor-fusion buffer threshold
+~64 KB on GbE (one TCP window). For our layers with small activations
+(< 64 KB) we should NOT tile; only the large MoE-FFN matmuls benefit.
+
+**d) Drain interleaving** — vLLM DBO's cooperative-yield pattern.
+On a 4-core Pi 5: dedicate 1 core to socket draining, 3 to matmul.
+Validate empirically — if compute regression exceeds overlap gain,
+abort Phase B at the B5 milestone.
+
+### Known failure patterns (from the survey)
+
+- **`llama.cpp -sm row`** (tensor-parallel via row split) has been
+  documented "slow as molasses" for ~2.5 years (`ikawrakow` issue #254,
+  ggml-org issue #13083). Root cause: tile send without scheduling.
+  Naïve chunked send REGRESSES. This is why we need the FlashOverlap
+  signalling, not just sequential per-tile writes.
+- **`llama.cpp` RPC backend** does request/response per op — no
+  pipelining. Discussion #9136 documents the Ethernet slowness;
+  Jeff Geerling's 25× regression on the 3-Pi cluster came from this.
+- **Tile too small** → TCP per-packet overhead (Nagle, segment
+  headers) > matmul tile time → regression. Floor tile size at
+  ~MTU × N = ~6 KB for GbE.
+- **Tile too large** → first-byte latency dominates → effective
+  overlap window is small.
+- **Same thread doing compute and `recv()`** → matmul stalls on
+  network. Needs the DBO yield model.
+
+### Why CoCoNet's three-level scheduling matters for us
+
+```
+Level 1: buffer-tile  (the K=4 we discussed)
+Level 2: rank-chunk   (per-peer slice of each tile, since N=4 nodes)
+Level 3: channel-chunk (TCP-level chunking, MTU-sized fragments)
+```
+
+The first buffer-tile pays setup latency (RTT, syscall overhead) —
+fine-grained overlap doesn't help here. Subsequent tiles use coarse
+pipelining and saturate the GbE link. This split is exactly what
+distinguishes CoCoNet's wins from llama.cpp `-sm row`'s losses.
+
+### Bottom line from the survey
+
+The project is novel. The closest open-source ingredients combined:
+*FlashOverlap atomic counter on AVX/NEON microkernel epilogue → fuse
+into Horovod-style buffer → ship over TCP → DBO-style yielding compute
+thread on the receive side*.
+
+The negative results (llama.cpp -sm row) tell us where the cliff is:
+naïve "send each chunk as it's ready" without proper scheduling
+regresses. So the scheduler is the load-bearing piece.
+
 ## 8. References
 
 - [FlashOverlap arXiv 2504.19519](https://arxiv.org/abs/2504.19519) — the signalling abstraction we are porting.
