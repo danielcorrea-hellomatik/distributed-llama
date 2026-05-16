@@ -1,0 +1,20 @@
+[Unit]
+Description=dllama API (Qwen3-30B-A3B MoE distributed, optimized)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rpi
+WorkingDirectory=/home/rpi/distributed-llama
+Environment="LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2"
+Environment="MALLOC_CONF=narenas:4,tcache:true,dirty_decay_ms:30000"
+ExecStart=/usr/bin/nice -n -10 /home/rpi/distributed-llama/dllama-api --host 127.0.0.1 --port 9999 --model /home/rpi/distributed-llama/models/qwen3_30b_a3b_q40/dllama_model_qwen3_30b_a3b_q40.m --tokenizer /home/rpi/distributed-llama/models/qwen3_30b_a3b_q40/dllama_tokenizer_qwen3_30b_a3b_q40.t --buffer-float-type q80 --workers 192.168.1.77:9998 192.168.1.75:9998 192.168.1.76:9998 --nthreads 4 --max-seq-len 32768
+Restart=on-failure
+RestartSec=15
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

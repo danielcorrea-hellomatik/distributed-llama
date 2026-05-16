@@ -1,0 +1,13 @@
+[Unit]
+Description=EEVDF scheduler tuning for distributed-llama
+After=local-fs.target
+Before=dllama-worker.service dllama-api.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 5000000 > /sys/kernel/debug/sched/migration_cost_ns'
+ExecStart=/bin/sh -c 'echo 8400000 > /sys/kernel/debug/sched/base_slice_ns'
+
+[Install]
+WantedBy=multi-user.target
