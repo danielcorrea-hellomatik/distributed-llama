@@ -21,7 +21,7 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERROR strerror(errno)
 
 #define ACK 23571114
-#define MAX_CHUNK_SIZE 4096
+#define MAX_CHUNK_SIZE 1048576
 
 static inline bool isEagainError() {
     #ifdef _WIN32
