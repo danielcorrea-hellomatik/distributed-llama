@@ -124,6 +124,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.gpuSegmentTo = atoi(separator + 1);
         } else if (std::strcmp(name, "--net-turbo") == 0) {
             args.netTurbo = atoi(value) == 1;
+        } else if (std::strcmp(name, "--nbatches") == 0) {
+            args.nBatches = (NnUint)atoi(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }

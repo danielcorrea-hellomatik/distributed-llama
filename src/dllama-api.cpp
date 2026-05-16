@@ -79,8 +79,15 @@ public:
         std::getline(iss, req.body, '\0');
 
         if (req.body.size() > 0) {
-            // printf("body: %s\n", req.body.c_str());
-            req.parsedJson = json::parse(req.body);
+            try {
+                req.parsedJson = json::parse(req.body);
+            } catch (const std::exception &jpe) {
+                FILE *fd = fopen("/tmp/dllama_bad_body.bin", "wb");
+                if (fd) { fwrite(req.body.data(), 1, req.body.size(), fd); fclose(fd); }
+                printf("⚠️  JSON parse err: %s (body=%zu) dumped to /tmp/dllama_bad_body.bin\n", jpe.what(), req.body.size());
+                fflush(stdout);
+                req.parsedJson = json::object();
+            }
         }
         return req;
     }
@@ -121,7 +128,7 @@ public:
                 throw std::runtime_error("Error while reading headers from socket");
             }
             buffer[bytesRead] = '\0';
-            headerData.append(buffer);
+            headerData.append(buffer, bytesRead);
 
             const size_t endRnRn = headerData.find("\r\n\r\n");
             if (endRnRn != std::string::npos) {
@@ -465,7 +472,7 @@ public:
             naiveCache.push(NaiveCacheItem(promptEndPos, deltaPrompt[j]));
         }
 
-        std::string buffer;
+        std::string buffer; buffer.reserve(65536);
 
         if (params.stream)
             request.writeStreamStartChunk();
@@ -545,6 +552,7 @@ public:
             writeChatCompletionChunk(request, "", true);
         } else {
             Choice choice(reply);
+            choice.finish_reason = (pos == header->seqLen) ? "length" : "stop";
 
             if (!params.tools.empty()) {
                 std::vector<ToolCall> parsedToolCalls;

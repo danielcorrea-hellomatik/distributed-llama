@@ -65,6 +65,30 @@ static inline void setQuickAck(int socket) {
 #endif
 }
 
+static inline void setSocketBuffers(int socket) {
+#ifndef _WIN32
+    int bufSize = 8 * 1024 * 1024;
+    setsockopt(socket, SOL_SOCKET, SO_RCVBUF, (char*)&bufSize, sizeof(int));
+    setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char*)&bufSize, sizeof(int));
+#ifdef TCP_NODELAY
+    int flag = 1;
+    setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
+#endif
+#ifdef SO_BUSY_POLL
+    int busyPoll = 50;
+    setsockopt(socket, SOL_SOCKET, SO_BUSY_POLL, (char*)&busyPoll, sizeof(int));
+#endif
+#ifdef SO_PRIORITY
+    int prio = 6;
+    setsockopt(socket, SOL_SOCKET, SO_PRIORITY, (char*)&prio, sizeof(int));
+#endif
+#ifdef SO_INCOMING_CPU
+    int cpu = -1;
+    setsockopt(socket, SOL_SOCKET, SO_INCOMING_CPU, (char*)&cpu, sizeof(int));
+#endif
+#endif
+}
+
 void setReuseAddr(int socket) {
     int opt = 1;
     #ifdef _WIN32
@@ -169,6 +193,7 @@ static inline int connectSocket(char *host, int port) {
 
     setNoDelay(sock);
     setQuickAck(sock);
+    setSocketBuffers(sock);
     return sock;
 }
 
@@ -220,6 +245,7 @@ int createServerSocket(const char *host, const int port) {
 
     setNoDelay(serverSocket);
     setQuickAck(serverSocket);
+    setSocketBuffers(serverSocket);
     return serverSocket;
 }
 
@@ -240,6 +266,7 @@ int acceptSocket(int serverSocket) {
         throw std::runtime_error("Error accepting connection");
     setNoDelay(clientSocket);
     setQuickAck(clientSocket);
+    setSocketBuffers(clientSocket);
     return clientSocket;
 }
 

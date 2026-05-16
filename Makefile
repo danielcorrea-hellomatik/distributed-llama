@@ -8,7 +8,7 @@ endif
 ifdef DEBUG
 	CXXFLAGS += -g -fsanitize=address
 else
-	CXXFLAGS += -O3
+	CXXFLAGS += -O3 -flto -ffast-math -funroll-loops -mcpu=cortex-a76 -mtune=cortex-a76 -march=armv8.2-a+fp16+dotprod+rcpc -fipa-pta -fipa-icf -falign-functions=64 -falign-loops=64
 endif
 
 ifdef WVLA

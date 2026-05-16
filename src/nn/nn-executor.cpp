@@ -1,9 +1,24 @@
+#include <cstdlib>
+#include <stdexcept>
 #include <cassert>
 #include <cstring>
 #include "nn-executor.hpp"
 
 void NnFakeNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
     // Nothing
+}
+
+
+static inline NnByte *alignedAlloc(size_t size) {
+    void *ptr = nullptr;
+    size_t aligned = (size + 63) & ~63;  // round up to 64
+    if (posix_memalign(&ptr, 64, aligned) != 0 || ptr == nullptr)
+        throw std::runtime_error("aligned alloc failed");
+    return (NnByte *)ptr;
+}
+
+static inline void alignedFree(NnByte *p) {
+    free(p);
 }
 
 NnNetExecution::NnNetExecution(NnUint nThreads, NnNetConfig *netConfig) {
@@ -15,7 +30,7 @@ NnNetExecution::NnNetExecution(NnUint nThreads, NnNetConfig *netConfig) {
     pipes = new NnByte *[netConfig->nPipes];
     for (NnUint pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++) {
         NnPipeConfig *pipeConfig = &netConfig->pipes[pipeIndex];
-        NnByte *pipe = new NnByte[pipeConfig->size.nBytes];
+        NnByte *pipe = alignedAlloc(pipeConfig->size.nBytes);
         std::memset(pipe, 0, pipeConfig->size.nBytes);
         pipes[pipeIndex] = pipe;
     }
