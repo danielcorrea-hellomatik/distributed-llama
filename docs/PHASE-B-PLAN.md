@@ -499,3 +499,65 @@ time = upper bound on Phase B gain. Realistic target with wave-
 equal split: +5-12 %.
 
 Proceeding to B2 (double-buffer pipes).
+
+### 2026-05-16 (continued) — B2-B4 foundation merged, B5+ deferred
+
+After B1 validated the design, decided to ship the additive foundation
+to `pi5-cluster` and defer the risky B5-B6 (network drain thread,
+syncNodeSlices integration) to a dedicated session.
+
+What landed on pi5-cluster (commit `6597cd4`):
+- B1 instrumentation (per-sync timing, stderr stats every 50 forwards)
+- B2 *deferred* — pipes stay single-buffered. Adding double buffering
+  is dead memory until B5/B6 consume the tile signals.
+- B3 — `src/nn/nn-tile-signal.hpp`: header-only `NnTileSignal` struct,
+  `NnTileHeader` wire format, `NN_K_TILES = 4`. Dead code until B5/B6.
+- B4 *deferred* — modifying matmul to emit signals is only useful once
+  a consumer thread exists. Skipped to avoid touching the hot kernel
+  for nothing.
+- Plus: yield/pause hint in the inter-step barrier busy-spin (was the
+  only hot spin still without an arch hint).
+
+Measured n=20 after merge: **13.718 +/- 0.058**, vs prior 13.77 baseline
+— within noise. Foundation has no perf cost.
+
+What remains for the next session (the hard part):
+
+- **B5** (~150 LOC, RISK HIGH): network drain thread + tile-emit on
+  send side. Cluster downtime ~minutes per iteration; expect 3-5
+  iterations.
+- **B6** (~120 LOC, RISK HIGHEST): integrate into `syncNodeSlices`
+  with mandatory 8-byte tile header, per-layer barrier on
+  `popcount(tile_arrived_bitmap) == expected`, 50 ms watchdog.
+- **B7** (~30 LOC): tune K (2/4/8), benchmark, ship or revert.
+
+Time estimate honest: a single focused 4-6 hour session. Plus a
+60-minute soak before merging.
+
+The TileSignal primitive in `nn-tile-signal.hpp` is already the
+exact API B5/B6 will consume: `NnTileSignal::signalReady()` from the
+producer side, `NnTileSignal::waitAtLeast(1)` from the drain thread.
+The wire header in the same file is the format the receiver will
+parse. No design churn pending.
+
+### Session summary
+
+Across two sessions (F0..F2..F1 then B1..B-foundation):
+
+```
+Original v0.16.5 + 6 patches       13.596 +/- 0.079
++ F0 (llamafile gate)              13.724 +/- 0.042   +0.94 %
++ F2 (cache-line pad atomics)      13.752 +/- 0.044   +1.15 %
++ F1 (persistent thread pool)      13.950 +/- 0.047   +2.60 %  *high noise*
++ B1 (instrumentation)             13.720 +/- 0.048   +0.91 %  *no overhead*
++ Phase-B foundation (yield+hdr)   13.718 +/- 0.058   +0.90 %
++5-12 % to be unlocked by B5..B7 (next session)
+```
+
+Real sustained gain over the session: roughly +1 % above the v0.16.5
+baseline, primarily from F0 and F1. Bigger wins are gated on the
+Phase B refactor, which is intentionally not attempted here without
+a contiguous test window.
+
+Cluster remains on `pi5-cluster` branch, all four Pis tracking
+`origin/pi5-cluster`, serving stable at ~13.7 tok/s.
