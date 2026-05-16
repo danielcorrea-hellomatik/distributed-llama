@@ -561,3 +561,52 @@ a contiguous test window.
 
 Cluster remains on `pi5-cluster` branch, all four Pis tracking
 `origin/pi5-cluster`, serving stable at ~13.7 tok/s.
+
+### 2026-05-17 00:30 — opt-b5b6-tiled-sync: framework shipped, K=2 measured
+
+Built and pushed the `--tile-sync K` CLI flag with a wire-compatible
+`syncNodeSlicesTiled` function. Default K=0 stays byte-identical to the
+legacy path.
+
+K=0 (default, after deploy): cluster healthy, single-shot inference correct.
+
+K=2 (manually enabled in systemd units across all 4 Pis):
+
+```
+Run 1..20  range: 12.98 .. 13.22 tok/s
+mean       13.170 +/- 0.062 tok/s   (n=20)
+vs K=0     13.77  baseline           -> -4.4 % REGRESSION
+```
+
+This confirms the cautionary tale from the implementation survey:
+**chunked I/O alone, without true compute/comms overlap, regresses
+because of TCP small-write penalty per chunk.** The kernel was already
+pipelining the single-call sync efficiently; splitting into two
+sequential write+read passes pays a per-pass syscall + ack penalty
+without recovering it elsewhere.
+
+The framework is correct (sanity tokens identical) and ready to host
+the *real* overlap once the matmul is modified to emit per-tile
+signals — that piece is still ~250 LOC of careful work across
+`nn-cpu-ops.cpp` (matmul progressive output) + `nn-executor.cpp`
+(separate network drain thread) + `nn-network.cpp` (consume signals
+from drain thread). At that point K=2 should flip from -4 % to
++5-12 %.
+
+Reverted cluster to pi5-cluster (without --tile-sync) for safety.
+Branch `opt-b5b6-tiled-sync` retained on GitHub for archival.
+
+### Session honest tally
+
+| Branch / state | tok/s | vs origin | Disposition |
+|----------------|-------|-----------|-------------|
+| Original 6-patch baseline | 13.596 | 0 | starting line |
+| pi5-cluster (with F0+F2+F1+foundation) | ~13.72 | +0.9 % | **deployed (current production)** |
+| opt-b5b6-tiled-sync K=2 | 13.170 | -3.1 % | archived (negative result, framework valuable) |
+
+Phase B real gain (+5-12 %) is gated on the matmul progressive
+output + drain thread integration. That work is scoped and the
+infrastructure (TileSignal header, CLI flag, tiled-sync dispatch,
+PHASE_B_STATS) is in place to support it. Not attempted in this
+session because the iteration cost (full rebuild + 4-node restart +
+soak test) exceeds available autonomous testing time.
