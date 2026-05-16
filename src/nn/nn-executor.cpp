@@ -155,8 +155,8 @@ static inline void *executorThreadHandler(void *arg) {
     NnUint nThreads = context->nThreads;
     NnUint doneCount = nThreads - 1;
 
-    while (context->isAlive.load()) {
-        const unsigned int currentStepIndex = context->currentStepIndex.load();
+    while (context->isAlive.load(std::memory_order_acquire)) {
+        const unsigned int currentStepIndex = context->currentStepIndex.load(std::memory_order_acquire);
         if (currentStepIndex == context->nSteps)
             break;
 
@@ -164,12 +164,12 @@ static inline void *executorThreadHandler(void *arg) {
         try {
             executeStep(step, nThreads, thread, context);
         } catch (const std::runtime_error &e) {
-            context->isAlive.store(false);
+            context->isAlive.store(false, std::memory_order_release);
             printf("🚨 Execution error: %s\n", e.what());
             break;
         }
 
-        NnUint currentCount = context->doneThreadCount.fetch_add(1);
+        NnUint currentCount = context->doneThreadCount.fetch_add(1, std::memory_order_acq_rel);
         if (currentCount == doneCount) {
             if (context->timer != nullptr) {
                 NnUint time = context->timer->elapsedMicroseconds();
@@ -177,12 +177,12 @@ static inline void *executorThreadHandler(void *arg) {
                 context->timer->reset();
             }
 
-            context->doneThreadCount.store(0);
-            context->currentStepIndex.fetch_add(1);
+            context->doneThreadCount.store(0, std::memory_order_relaxed);
+            context->currentStepIndex.fetch_add(1, std::memory_order_release);
         } else {
             while (
-                context->currentStepIndex.load() == currentStepIndex &&
-                context->isAlive.load()
+                context->currentStepIndex.load(std::memory_order_acquire) == currentStepIndex &&
+                context->isAlive.load(std::memory_order_acquire)
             );
         }
     }
