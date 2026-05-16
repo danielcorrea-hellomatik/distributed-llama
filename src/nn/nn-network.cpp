@@ -732,10 +732,10 @@ static void syncNodeSlicesTiled(bool onlyFromWorkerToRoot, NnNetwork *network, N
                 rIos[i].size = tileBytes;
             }
         }
-        network->writeReadMany(
-            doWrite ? nSocketsPerThread : 0, doWrite ? &wIos[0] : nullptr,
-            doRead  ? nSocketsPerThread : 0, doRead  ? &rIos[0] : nullptr
-        );
+        if (doWrite)
+            network->writeMany(nSocketsPerThread, &wIos[0]);
+        if (doRead)
+            network->readMany(nSocketsPerThread, &rIos[0]);
     }
 
     if (wIos != wIosStack) delete[] wIos;
