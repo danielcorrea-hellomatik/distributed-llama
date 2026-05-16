@@ -12,21 +12,32 @@ It is informed by:
 - Three failure rounds in this same cluster: PGO, MSG_ZEROCOPY/TCP_QUICKACK,
   isolcpus + taskset + nthreads. All documented in `FAILED-ATTEMPTS.md`.
 
-Current state: 13.8 tok/s sustained, 95 % CI +/- 0.05; +6 % above the public
+Current state: 13.6 tok/s sustained, 95 % CI +/- 0.06; +5 % above the public
 community ceiling for this hardware (b4rtaz issue #255).
+
+> **2026-05-16 update.** After landing the fork, deploying it to the four
+> Pis and instrumenting the running cluster with `strace -c` and `perf
+> record`, the original Phase A was empirically invalidated. See
+> [`docs/PROFILING-FINDINGS.md`](PROFILING-FINDINGS.md). Summary: the
+> network is at 40 % of GbE, syscalls are 4.5 % of wall time, and the
+> remaining 17 % busy-spin in `executorThreadHandler` IS the round-trip
+> latency. No algorithm change to the all-reduce reduces that wait.
+> The only software lever left is **tile-level overlap with compute**,
+> which is what Phase B was always about. We now skip Phase A and go
+> straight to Phase B.
 
 ## 1. Headline conclusion
 
-Two of the three originally-considered optimisations are out:
+Three of the four originally-considered optimisations are out:
 
 | Phase | Original idea | Verdict | Reason |
 |-------|---------------|---------|--------|
 | Phase 1 | DeepSpeed-style fused attn+MLP AllReduce | **Dropped** | Qwen3-A3B's MoE gate needs the fully-normed vector; routing on a per-node partial sends each node to different experts. Also incompatible with our `--buffer-float-type q80`. |
 | Phase 2 | Rabenseifner recursive halving-doubling | **Replaced** | RHRD is latency-optimal; our regime is bandwidth-bound (1.7 MB per sync at 30 syncs/token). RHRD would be neutral or worse. |
+| Phase A (was) | Chunked pipelined ring all-reduce | **Dropped after profiling** | Profiling showed the current star-with-parallel-sockets implementation already saturates the kernel's full-duplex buffering. Raising `MAX_CHUNK_SIZE` from 4 KiB to 1 MiB measured 13.559 vs 13.632 tok/s (within noise). The wait is round-trip latency, not bandwidth. |
 
-What remains is a single coherent two-phase refactor:
+What remains is a single phase:
 
-- **Phase A**: chunked pipelined ring all-reduce in the network layer.
 - **Phase B**: tile-signalling FlashOverlap-style async, so compute on layer N+1
   starts as soon as layer N's partial sums leave the matmul instead of waiting
   for the full sync to complete.
