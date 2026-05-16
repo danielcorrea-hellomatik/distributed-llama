@@ -72,9 +72,9 @@ typedef struct {
     NnUint nSteps;
     NnExecutorStep *steps;
     NnNodeSynchronizer *synchronizer;
-    std::atomic_uint currentStepIndex;
-    std::atomic_uint doneThreadCount;
-    std::atomic_bool isAlive;
+    alignas(64) std::atomic_uint currentStepIndex;
+    alignas(64) std::atomic_uint doneThreadCount;
+    alignas(64) std::atomic_bool isAlive;
     NnUint batchSize;
     Timer *timer;
     NnUint totalTime[N_STEP_TYPES];
