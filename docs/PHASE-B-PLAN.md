@@ -470,3 +470,32 @@ The implementation diary, results of each sub-phase benchmark, and
 any failures will be appended to this document as we work through
 B1 → B7. Failures count: starting at 0; if we hit 5, we pause and
 re-evaluate the design.
+
+## 9. Living log
+
+### 2026-05-16 — B1 instrumentation deployed
+
+Implementation: `nn-network.cpp` wraps `syncNodeSlices`,
+`syncWithRoot` and `NnNetworkNodeSynchronizer::sync` with timing on
+thread index 0. Atomic counters; periodic stderr print every 50
+forwards.
+
+Measured on the live 4-Pi cluster, 5000 forwards:
+
+```
+syncNodeSlices:  125.5 us / call  × 98  = 12.3 ms / forward
+syncWithRoot:     15.6 us / call  × 1   =  0.0 ms / forward
+TOTAL              13.0 ms / forward  (~17.7 % of 73 ms token)
+```
+
+n=20 benchmark with instrumentation enabled: **13.720 +/- 0.048**
+vs prior baseline 13.77. No regression from instrumentation.
+
+Decision-point passed: sync time per token (~13 ms) matches our
+pre-implementation estimate; the 25 % busy-spin observed in `perf`
+is roughly 17.7 % sync wall-clock + ~7 % inter-step barrier
+spinning. Tile-overlap can therefore hide AT MOST 17.7 % of token
+time = upper bound on Phase B gain. Realistic target with wave-
+equal split: +5-12 %.
+
+Proceeding to B2 (double-buffer pipes).
