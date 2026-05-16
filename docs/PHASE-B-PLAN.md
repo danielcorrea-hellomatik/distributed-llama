@@ -561,3 +561,39 @@ a contiguous test window.
 
 Cluster remains on `pi5-cluster` branch, all four Pis tracking
 `origin/pi5-cluster`, serving stable at ~13.7 tok/s.
+
+### 2026-05-17 01:00 — async-sync orchestrator code shipped
+
+Wrote the missing core of Phase B as plain code (no deploy, Pis are
+freed per user instruction). New files on opt-b5b6-tiled-sync:
+
+- `src/nn/nn-async-sync.hpp` (94 LOC) — public API:
+  `NnAsyncSyncContext`, `nnAsyncSyncReset`, `nnAsyncSyncStart`,
+  `nnAsyncSyncEmit`, `nnAsyncSyncJoin`.
+- `src/nn/nn-async-sync.cpp` (130 LOC) — `drainThreadMain` that
+  spins on per-tile signals, ships 8-byte tile-header + payload to
+  every peer, then drains receive side using header dispatch.
+- `Makefile` updated to compile and link `nn-async-sync.o` into both
+  `dllama` and `dllama-api`.
+
+This satisfies risks 5.1 (out-of-order wire — header present),
+5.2 (producer/consumer race — explicit release/acquire), 5.4
+(inter-layer dependency — `nnAsyncSyncJoin` blocks until all peer
+tiles arrived) and 5.10 (peer crash — `ctx->aborted` + `errMsg`
+surface clean failure via thrown runtime_error).
+
+**What still needs wiring (next session):**
+1. Modify `matmul_Q80_Q40_F32` in `src/nn/nn-cpu-ops.cpp` to accept
+   an optional `NnAsyncSyncContext *` and call
+   `nnAsyncSyncEmit(ctx, t)` after each chunk of `d/K` output rows.
+   ~30 LOC.
+2. Add dispatch logic in `NnNetworkNodeSynchronizer::sync` to
+   construct the context, spawn drain, run matmul-with-emitter,
+   join. ~60 LOC.
+3. Verify build on the Pis (untested in this session).
+4. Test K=2 end-to-end. Expect +5-12 % if correct, regression if
+   ordering bug — easy to roll back via `--tile-sync 0`.
+
+Branch `opt-b5b6-tiled-sync` is the integration target. Cluster is
+on `pi5-cluster` (legacy known-good, services stopped per user
+"libera a las rpis" instruction).
