@@ -31,6 +31,7 @@ public:
     ChatTemplateType chatTemplateType;
     NnUint maxSeqLen;
     bool netTurbo;
+    NnUint tileSync;  // Phase B: 0 = legacy sync; >0 = tile-overlap sync with K=tileSync tiles per slice
     int gpuIndex;
     int gpuSegmentFrom;
     int gpuSegmentTo;

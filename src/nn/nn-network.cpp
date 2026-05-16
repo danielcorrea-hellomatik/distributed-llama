@@ -672,11 +672,74 @@ static void syncNodeSlices_impl(bool onlyFromWorkerToRoot, NnNetwork *network, N
     }
 }
 
-NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
+NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnUint tileSync) {
     this->network = network;
     this->execution = execution;
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
+    this->tileSync = tileSync;
+    if (tileSync > 0)
+        fprintf(stderr, "PHASE_B: tile-sync enabled with K=%u\n", tileSync);
+}
+
+// Phase B / B5+B6: tile-sliced sync. Splits the slice into K equal chunks
+// and calls writeReadMany K times, each on chunk-sized writeIos/readIos.
+// Wire format is unchanged (raw bytes) — both sender and receiver must run
+// with the SAME tileSync K, otherwise the receiver expects the wrong byte
+// count per pass and the protocol deadlocks. This is a chunked-I/O form
+// only; true compute/comms overlap requires the matmul also to be modified
+// to emit per-tile signals (B6 follow-up).
+static void syncNodeSlicesTiled(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint nodeIndex, NnUint nNodes, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex, NnUint K) {
+    bool isWorker = nodeIndex != 0;
+    NnUint nSockets = onlyFromWorkerToRoot && isWorker ? 1 : network->nSockets;
+    NnUint nSocketsPerThread = nSockets / nThreads + (nSockets % nThreads > threadIndex ? 1 : 0);
+    if (nSocketsPerThread == 0) return;
+    NnSize sliceBytes = nBytes / nNodes;
+    // K must divide sliceBytes; otherwise fall back to legacy.
+    if (K == 0 || sliceBytes % K != 0) {
+        // Caller should have already filtered; this is defensive.
+        return;
+    }
+    NnSize tileBytes = sliceBytes / K;
+
+    bool doWrite = !onlyFromWorkerToRoot || isWorker;
+    bool doRead  = !onlyFromWorkerToRoot || !isWorker;
+
+    constexpr NnUint kStackIos = 16;
+    NnSocketIo wIosStack[kStackIos];
+    NnSocketIo rIosStack[kStackIos];
+    NnSocketIo *wIos = (nSocketsPerThread <= kStackIos) ? wIosStack : new NnSocketIo[nSocketsPerThread];
+    NnSocketIo *rIos = (nSocketsPerThread <= kStackIos) ? rIosStack : new NnSocketIo[nSocketsPerThread];
+
+    NnByte *mySliceData = &buffer[sliceBytes * nodeIndex];
+
+    for (NnUint t = 0; t < K; t++) {
+        if (doWrite) {
+            for (NnUint i = 0; i < nSocketsPerThread; i++) {
+                NnUint socketIndex = threadIndex + i * nThreads;
+                wIos[i].socketIndex = socketIndex;
+                wIos[i].data = mySliceData + t * tileBytes;
+                wIos[i].size = tileBytes;
+            }
+        }
+        if (doRead) {
+            for (NnUint i = 0; i < nSocketsPerThread; i++) {
+                NnUint socketIndex = threadIndex + i * nThreads;
+                NnUint sliceIndex = socketIndex >= nodeIndex ? socketIndex + 1 : socketIndex;
+                NnByte *sliceData = &buffer[sliceBytes * sliceIndex];
+                rIos[i].socketIndex = socketIndex;
+                rIos[i].data = sliceData + t * tileBytes;
+                rIos[i].size = tileBytes;
+            }
+        }
+        network->writeReadMany(
+            doWrite ? nSocketsPerThread : 0, doWrite ? &wIos[0] : nullptr,
+            doRead  ? nSocketsPerThread : 0, doRead  ? &rIos[0] : nullptr
+        );
+    }
+
+    if (wIos != wIosStack) delete[] wIos;
+    if (rIos != rIosStack) delete[] rIos;
 }
 
 // B1: count a "forward" only when the FIRST segment of a token is synced by
@@ -715,12 +778,22 @@ void NnNetworkNodeSynchronizer::sync_impl(NnUint segmentIndex, NnUint nThreads, 
         for (NnUint batchIndex = 0; batchIndex < execution->batchSize; batchIndex++) {
             NnByte *pipeBatch = &pipe[batchIndex * batchBytes];
 
+            // Phase B: dispatch to tiled sync when tileSync > 0 and the
+            // slice size divides cleanly. Otherwise fall through to legacy.
+            NnSize sliceBytes = batchBytes / netConfig->nNodes;
+            bool useTiled = (tileSync > 0) && (sliceBytes % tileSync == 0);
             if (syncConfig->syncType == SYNC_WITH_ROOT) {
                 syncWithRoot(network, nodeConfig->nodeIndex, pipeBatch, batchBytes, nThreads, threadIndex);
             } else if (syncConfig->syncType == SYNC_NODE_SLICES) {
-                syncNodeSlices(false, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex);
+                if (useTiled)
+                    syncNodeSlicesTiled(false, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex, tileSync);
+                else
+                    syncNodeSlices(false, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex);
             } else if (syncConfig->syncType == SYNC_NODE_SLICES_EXCEPT_ROOT) {
-                syncNodeSlices(true, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex);
+                if (useTiled)
+                    syncNodeSlicesTiled(true, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex, tileSync);
+                else
+                    syncNodeSlices(true, network, nodeConfig->nodeIndex, netConfig->nNodes, pipeBatch, batchBytes, nThreads, threadIndex);
             } else {
                 throw std::invalid_argument("Unknown sync type");
             }

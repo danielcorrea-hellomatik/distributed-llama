@@ -44,6 +44,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
     args.netTurbo = true;
+    args.tileSync = 0;  // 0 = legacy; >0 enables Phase B tiled sync
     args.gpuIndex = -1;
     args.gpuSegmentFrom = -1;
     args.gpuSegmentTo = -1;
@@ -126,6 +127,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.netTurbo = atoi(value) == 1;
         } else if (std::strcmp(name, "--nbatches") == 0) {
             args.nBatches = (NnUint)atoi(value);
+        } else if (std::strcmp(name, "--tile-sync") == 0) {
+            args.tileSync = (NnUint)atoi(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
@@ -269,7 +272,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     } else {
         networkPtr = NnNetwork::connect(args->nWorkers, args->workerHosts, args->workerPorts);
         network = networkPtr.get();
-        synchronizer.reset(new NnNetworkNodeSynchronizer(network, &execution, &net.netConfig, rootNodeConfig));
+        synchronizer.reset(new NnNetworkNodeSynchronizer(network, &execution, &net.netConfig, rootNodeConfig, args->tileSync));
 
         NnRootConfigWriter configWriter(network);
         configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
@@ -321,7 +324,7 @@ void runWorkerApp(AppCliArgs *args) {
         NnNetExecution execution(args->nThreads, &netConfig);
 
         std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
-        NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
+        NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig, args->tileSync);
         NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
         NnWorkerWeightReader weightReader(&executor, network);
