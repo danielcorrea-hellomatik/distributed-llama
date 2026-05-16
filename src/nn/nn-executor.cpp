@@ -115,9 +115,26 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::ve
         thread->threadIndex = threadIndex;
         thread->context = &context;
     }
+
+    // Persistent worker pool: spawn N-1 threads once and reuse across every
+    // forward() call. Thread 0 is the calling (main) thread and is not
+    // created here.
+    context.generation.store(0, std::memory_order_relaxed);
+    context.workersDone.store(0, std::memory_order_relaxed);
+    context.shutdown.store(false, std::memory_order_relaxed);
+    for (NnUint threadIndex = 1; threadIndex < netExecution->nThreads; threadIndex++) {
+        int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorWorkerLoop, (void *)&threads[threadIndex]);
+        assert(result == 0 && "Failed to create worker thread");
+    }
 }
 
 NnExecutor::~NnExecutor() {
+    // Signal worker pool to exit and join.
+    context.shutdown.store(true, std::memory_order_release);
+    context.generation.fetch_add(1, std::memory_order_release);
+    for (NnUint threadIndex = 1; threadIndex < netExecution->nThreads; threadIndex++)
+        pthread_join(threads[threadIndex].handler, NULL);
+
     if (context.timer != nullptr)
         delete context.timer;
     delete[] threads;
@@ -149,8 +166,7 @@ inline void executeStep(NnExecutorStep *step, NnUint nThreads, NnExecutorThread 
     }
 }
 
-static inline void *executorThreadHandler(void *arg) {
-    NnExecutorThread *thread = (NnExecutorThread *)arg;
+static inline void executorStepLoop(NnExecutorThread *thread) {
     NnExecutorContext *context = thread->context;
     NnUint nThreads = context->nThreads;
     NnUint doneCount = nThreads - 1;
@@ -186,16 +202,47 @@ static inline void *executorThreadHandler(void *arg) {
             );
         }
     }
-    return nullptr;
+}
+
+// Worker thread main loop: waits for a new forward() call (generation bump),
+// runs the step loop, signals done, repeats. Lifetime spans the whole
+// NnExecutor; saves one pthread_create + pthread_join per token.
+static inline void *executorWorkerLoop(void *arg) {
+    NnExecutorThread *thread = (NnExecutorThread *)arg;
+    NnExecutorContext *context = thread->context;
+    unsigned long long lastGen = 0;
+
+    while (true) {
+        // Wait for next forward() call. Spin on the generation counter; pause
+        // hint reduces power and avoids hammering the cache line.
+        unsigned long long gen;
+        for (;;) {
+            gen = context->generation.load(std::memory_order_acquire);
+            if (gen != lastGen) break;
+            if (context->shutdown.load(std::memory_order_acquire)) return nullptr;
+#if defined(__aarch64__) || defined(__arm__)
+            asm volatile ("yield" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+            asm volatile ("pause" ::: "memory");
+#endif
+        }
+        if (context->shutdown.load(std::memory_order_acquire)) return nullptr;
+        lastGen = gen;
+
+        executorStepLoop(thread);
+
+        context->workersDone.fetch_add(1, std::memory_order_release);
+    }
 }
 
 void NnExecutor::forward() {
     assert(netExecution->batchSize > 0);
 
     NnUint nThreads = netExecution->nThreads;
-    context.isAlive.exchange(true);
-    context.currentStepIndex.exchange(0);
-    context.doneThreadCount.exchange(0);
+    context.isAlive.store(true, std::memory_order_relaxed);
+    context.currentStepIndex.store(0, std::memory_order_relaxed);
+    context.doneThreadCount.store(0, std::memory_order_relaxed);
+    context.workersDone.store(0, std::memory_order_relaxed);
     context.batchSize = netExecution->batchSize;
 
     if (context.timer != nullptr) {
@@ -203,16 +250,24 @@ void NnExecutor::forward() {
         context.timer->reset();
     }
 
-    NnUint threadIndex;
-    for (threadIndex = 1; threadIndex < nThreads; threadIndex++) {
-        int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorThreadHandler, (void *)&threads[threadIndex]);
-        assert(result == 0 && "Failed to create thread");
-    }
-    executorThreadHandler((void *)&threads[0]);
-    for (threadIndex = 1; threadIndex < nThreads; threadIndex++)
-        pthread_join(threads[threadIndex].handler, NULL);
+    // Release the workers: they have been spinning on this counter inside
+    // executorWorkerLoop and will pick up the new generation and start work.
+    context.generation.fetch_add(1, std::memory_order_release);
 
-    if (!context.isAlive.load())
+    // Run thread 0 inline on the calling thread.
+    executorStepLoop(&threads[0]);
+
+    // Wait for the workers to finish this generation.
+    const NnUint expectedDone = nThreads - 1;
+    while (context.workersDone.load(std::memory_order_acquire) < expectedDone) {
+#if defined(__aarch64__) || defined(__arm__)
+        asm volatile ("yield" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+        asm volatile ("pause" ::: "memory");
+#endif
+    }
+
+    if (!context.isAlive.load(std::memory_order_acquire))
         throw NnExecutorException("Execution failed in one of the threads");
 }
 

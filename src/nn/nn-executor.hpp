@@ -75,6 +75,9 @@ typedef struct {
     alignas(64) std::atomic_uint currentStepIndex;
     alignas(64) std::atomic_uint doneThreadCount;
     alignas(64) std::atomic_bool isAlive;
+    alignas(64) std::atomic<unsigned long long> generation;
+    alignas(64) std::atomic_uint workersDone;
+    alignas(64) std::atomic_bool shutdown;
     NnUint batchSize;
     Timer *timer;
     NnUint totalTime[N_STEP_TYPES];
