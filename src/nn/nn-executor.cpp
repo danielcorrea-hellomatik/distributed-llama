@@ -199,10 +199,22 @@ static inline void executorStepLoop(NnExecutorThread *thread) {
             context->doneThreadCount.store(0, std::memory_order_relaxed);
             context->currentStepIndex.fetch_add(1, std::memory_order_release);
         } else {
+            // Inter-step barrier busy-spin. The yield hint tells the CPU
+            // we are in a polling loop; on ARM the hardware can reduce
+            // power and let other SMT siblings progress (no-op on A76
+            // which has no SMT, but harmless). Mainly it tags the loop
+            // for the scheduler so a softirq can preempt for network
+            // processing during sync steps.
             while (
                 context->currentStepIndex.load(std::memory_order_acquire) == currentStepIndex &&
                 context->isAlive.load(std::memory_order_acquire)
-            );
+            ) {
+#if defined(__aarch64__) || defined(__arm__)
+                asm volatile ("yield" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+                asm volatile ("pause" ::: "memory");
+#endif
+            }
         }
     }
 }
