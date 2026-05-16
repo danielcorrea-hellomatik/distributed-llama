@@ -16,6 +16,27 @@ typedef SSIZE_T ssize_t;
 #include <stdexcept>
 #include <vector>
 #include <fcntl.h>
+#include <atomic>
+#include <chrono>
+
+// =============================================================================
+// Phase B / B1: timing instrumentation for sync ops
+// Counts and accumulates wall-clock time per sync call type. Thread-safe via
+// atomic fetch_add. Sampled and printed every PHASE_B_PRINT_EVERY tokens.
+// =============================================================================
+#define PHASE_B_PRINT_EVERY 50
+
+static std::atomic<unsigned long long> phaseB_syncNodeSlicesUs(0);
+static std::atomic<unsigned long long> phaseB_syncNodeSlicesCount(0);
+static std::atomic<unsigned long long> phaseB_syncWithRootUs(0);
+static std::atomic<unsigned long long> phaseB_syncWithRootCount(0);
+static std::atomic<unsigned long long> phaseB_forwardCount(0);
+
+static inline unsigned long long phaseB_nowUs() {
+    return (unsigned long long)std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
+}
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
@@ -565,7 +586,20 @@ void NnNetwork::resetStats() {
     }
 }
 
+// B1: wrap syncWithRoot with timing on threadIndex 0 only (other threads
+// finish quickly and would double-count).
+static void syncWithRoot_impl(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex);
+
 static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
+    unsigned long long t0 = (threadIndex == 0) ? phaseB_nowUs() : 0;
+    syncWithRoot_impl(network, nodeIndex, buffer, nBytes, nThreads, threadIndex);
+    if (threadIndex == 0) {
+        phaseB_syncWithRootUs.fetch_add(phaseB_nowUs() - t0, std::memory_order_relaxed);
+        phaseB_syncWithRootCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+static void syncWithRoot_impl(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
     if (nodeIndex == 0) {
         // root
 
@@ -592,7 +626,19 @@ static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, N
     }
 }
 
+// B1: thin wrapper for timing.
+static void syncNodeSlices_impl(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint nodeIndex, NnUint nNodes, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex);
+
 static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint nodeIndex, NnUint nNodes, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
+    unsigned long long t0 = (threadIndex == 0) ? phaseB_nowUs() : 0;
+    syncNodeSlices_impl(onlyFromWorkerToRoot, network, nodeIndex, nNodes, buffer, nBytes, nThreads, threadIndex);
+    if (threadIndex == 0) {
+        phaseB_syncNodeSlicesUs.fetch_add(phaseB_nowUs() - t0, std::memory_order_relaxed);
+        phaseB_syncNodeSlicesCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+static void syncNodeSlices_impl(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint nodeIndex, NnUint nNodes, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
     bool isWorker = nodeIndex != 0;
     NnUint nSockets = onlyFromWorkerToRoot && isWorker ? 1 : network->nSockets;
     NnUint nSocketsPerThread = nSockets / nThreads + (nSockets % nThreads > threadIndex ? 1 : 0);
@@ -633,7 +679,31 @@ NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetEx
     this->nodeConfig = nodeConfig;
 }
 
+// B1: count a "forward" only when the FIRST segment of a token is synced by
+// thread 0. We approximate token count by sample of segment 0 syncs.
 void NnNetworkNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
+    if (threadIndex == 0 && segmentIndex == 0) {
+        unsigned long long n = phaseB_forwardCount.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (n % PHASE_B_PRINT_EVERY == 0) {
+            unsigned long long sCount = phaseB_syncNodeSlicesCount.load(std::memory_order_relaxed);
+            unsigned long long sUs    = phaseB_syncNodeSlicesUs.load(std::memory_order_relaxed);
+            unsigned long long rCount = phaseB_syncWithRootCount.load(std::memory_order_relaxed);
+            unsigned long long rUs    = phaseB_syncWithRootUs.load(std::memory_order_relaxed);
+            fprintf(stderr,
+                "PHASE_B_STATS forwards=%llu  syncNodeSlices=%llu calls / %llu us  "
+                "(%.1f us/call)  syncWithRoot=%llu calls / %llu us (%.1f us/call)  "
+                "approx per-forward sync time: %.1f us\n",
+                n,
+                sCount, sUs, sCount ? (double)sUs / (double)sCount : 0.0,
+                rCount, rUs, rCount ? (double)rUs / (double)rCount : 0.0,
+                n ? (double)(sUs + rUs) / (double)n : 0.0);
+            fflush(stderr);
+        }
+    }
+    NnNetworkNodeSynchronizer::sync_impl(segmentIndex, nThreads, threadIndex);
+}
+
+void NnNetworkNodeSynchronizer::sync_impl(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
 
     for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
