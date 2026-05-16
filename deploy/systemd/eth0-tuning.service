@@ -1,0 +1,12 @@
+[Unit]
+Description=NIC tuning for dllama low-latency
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ethtool -C eth0 rx-usecs 10 tx-usecs 10
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

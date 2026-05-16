@@ -1,0 +1,15 @@
+[Unit]
+Description=dllama OpenAI proxy (sync Flask)
+After=dllama-api.service network-online.target
+Wants=dllama-api.service
+
+[Service]
+Type=simple
+User=rpi
+WorkingDirectory=/home/rpi
+ExecStart=/home/rpi/litellm-env/bin/python /home/rpi/dllama_proxy.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

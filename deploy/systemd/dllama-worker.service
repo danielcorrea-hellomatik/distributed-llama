@@ -1,0 +1,18 @@
+[Unit]
+Description=dllama worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment="LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2"
+Type=simple
+User=rpi
+WorkingDirectory=/home/rpi/distributed-llama
+ExecStart=/home/rpi/distributed-llama/dllama worker --port 9998 --nthreads 4
+Restart=on-failure
+LimitMEMLOCK=infinity
+RestartSec=5
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target
