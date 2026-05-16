@@ -75,9 +75,10 @@ private:
     NnNetExecution *execution;
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
+    NnUint tileSync;  // 0 = legacy single-pass; >0 = K-tile sync (Phase B)
     void sync_impl(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex);
 public:
-    NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+    NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnUint tileSync = 0);
     ~NnNetworkNodeSynchronizer() override {};
     void sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) override;
 };
