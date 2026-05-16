@@ -75,6 +75,7 @@ private:
     NnNetExecution *execution;
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
+    void sync_impl(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex);
 public:
     NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnNetworkNodeSynchronizer() override {};
