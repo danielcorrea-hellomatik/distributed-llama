@@ -54,8 +54,11 @@ NnExecutorDevice::NnExecutorDevice(NnDevice *device, int segmentFrom, int segmen
 }
 
 NnExecutorException::NnExecutorException(const std::string message)
-    : std::runtime_error(message) 
+    : std::runtime_error(message)
 {}
+
+// Forward declaration: defined later in this file.
+static inline void *executorWorkerLoop(void *arg);
 
 NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::vector<NnExecutorDevice> *devices, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark)
     : segments(nodeConfig->nSegments), steps()
