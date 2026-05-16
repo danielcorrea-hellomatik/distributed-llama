@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
+#include <atomic>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #elif defined(__AVX2__) || defined(__AVX512F__)
@@ -13,6 +14,7 @@
 #include "nn-cpu-ops.hpp"
 #include "nn-quants.hpp"
 #include "llamafile/sgemm.hpp"
+#include "nn-async-sync.hpp"
 
 #define DEBUG_OP_INPUT_OUTPUT false
 
@@ -446,6 +448,61 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         output[i] = sum;
     }
 #endif
+}
+
+// -----------------------------------------------------------------------------
+// Phase B / B6 — tile-emitting matmul wrapper.
+//
+// Splits a (d) x (n) matmul into K row-tiles. Each tile is processed by the
+// existing matmul_Q80_Q40_F32 kernel on a contiguous (d/K) x (n) sub-region,
+// then each thread bumps a per-tile completion counter. When the counter
+// reaches nThreads, that tile is ready; the LAST thread to finish raises
+// signals[t].signalReady() so the drain thread can start shipping it.
+//
+// Memory layout assumption: output is row-major with stride 1 in d; weights
+// are row-major with stride nBlocks per row. The same per-row partition that
+// the inner kernel uses is preserved, so the tile is computed bit-identically
+// to the non-tiled call.
+//
+// Constraints:
+//   - d must be divisible by K.
+//   - n must be divisible by Q40_BLOCK_SIZE (asserted in the inner kernel).
+//
+// `tileDone` is an array of K atomics provided by the caller (typically zeroed
+// by nnAsyncSyncReset on the same NnAsyncSyncContext).
+// -----------------------------------------------------------------------------
+static void matmul_Q80_Q40_F32_tiled(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w,
+                                       const NnUint n, const NnUint d,
+                                       const NnUint nThreads, const NnUint threadIndex,
+                                       NnAsyncSyncContext *ctx, std::atomic<NnUint> *tileDone) {
+    assert(ctx != nullptr);
+    assert(tileDone != nullptr);
+    assert(n % Q40_BLOCK_SIZE == 0);
+    assert(d % ctx->tiles == 0 && "matmul_Q80_Q40_F32_tiled: d must be divisible by K");
+    const NnUint K = ctx->tiles;
+    const NnUint tile_d = d / K;
+    const NnUint nBlocks = n / Q40_BLOCK_SIZE;
+
+    for (NnUint t = 0; t < K; t++) {
+        const NnSize rowOffset = (NnSize)t * tile_d;
+        // Delegate the inner SPLIT_THREADS + NEON dotprod loop to the existing
+        // kernel by pointing it at the tile's output / weight sub-region.
+        matmul_Q80_Q40_F32(
+            output + rowOffset,
+            x,
+            w + rowOffset * nBlocks,
+            n,
+            tile_d,
+            nThreads,
+            threadIndex
+        );
+
+        // All my rows of tile t are done. Promote the per-tile counter; the
+        // last thread to land here also wakes the drain thread.
+        NnUint c = tileDone[t].fetch_add(1, std::memory_order_acq_rel);
+        if (c + 1 == nThreads)
+            ctx->signals[t].signalReady();
+    }
 }
 
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
