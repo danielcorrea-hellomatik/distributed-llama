@@ -460,17 +460,11 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     size3D(h->weightType, h->nExperts, n.w3Slice.n, n.w3Slice.d0),
                     NnMatmulOpConfig{h->nExperts, h->nActiveExperts, moeExpertIndexesBufferIndex});
                 ff.addOp(
-                    OP_SILU, "block_act", layerIndex,
+                    OP_SILU_MUL, "block_silu_mul", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, moeDBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, moeDBufferIndex),
                     size0(),
-                    NnSiluOpCodeConfig{});
-                ff.addOp(
-                    OP_MUL, "block_mul", layerIndex,
-                    pointerBatchConfig(SRC_BUFFER, moeDBufferIndex),
-                    pointerBatchConfig(SRC_BUFFER, moeDBufferIndex),
-                    size0(),
-                    NnMulOpCodeConfig{moeLBufferIndex});
+                    NnSiluMulOpCodeConfig{moeLBufferIndex});
                 if (moeDBufferIndex != moeDQBufferIndex) {
                     ff.addOp(
                         OP_CAST, "block_cast_d2", layerIndex,

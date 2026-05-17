@@ -82,6 +82,7 @@ enum NnOpCode {
     OP_GELU,
     OP_SILU,
     OP_MUL,
+    OP_SILU_MUL,
     OP_SCALE,
     OP_CAST,
     OP_REPEAT_Z,
@@ -254,6 +255,10 @@ typedef struct {
 typedef struct {
     NnUint multiplierBufferIndex;
 } NnMulOpCodeConfig;
+
+typedef struct {
+    NnUint multiplierBufferIndex;
+} NnSiluMulOpCodeConfig;
 
 typedef struct {
     NnUint scaleBufferIndex;

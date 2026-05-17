@@ -499,6 +499,7 @@ static void silu_F32(float *output, const unsigned int n, const NnUint nThreads,
     }
 }
 
+
 static void add_F32(float *output, const float *x, const unsigned int n, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     for (unsigned int i = start; i < end; i++) {
@@ -812,6 +813,13 @@ static void mul_F32(float *y, const float *x, const float *m, const NnUint n, co
 #endif
     for (; i < end; i++)
         y[i] = x[i] * m[i];
+}
+
+static void silu_mul_F32(float *y, const float *m, const unsigned int n, const NnUint nThreads, const NnUint threadIndex) {
+    // Bit-exact fusion: same source code as separate silu_F32 + mul_F32 calls.
+    // Eliminates the inter-op barrier without changing arithmetic.
+    silu_F32(y, n, nThreads, threadIndex);
+    mul_F32(y, y, m, n, nThreads, threadIndex);
 }
 
 static void scale_F32(const float *i, float *o, const float s, NnSize size, NnUint nThreads, NnUint threadIndex) {
@@ -1310,6 +1318,24 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
     }
 }
 
+
+static void siluMulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnSiluMulOpCodeConfig *config = (NnSiluMulOpCodeConfig *)context->opConfig;
+    const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
+
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            silu_mul_F32(
+                (float *)context->output[zOffset + y],
+                &multiplier[context->outputSize.x * (zOffset + y)],
+                context->outputSize.x,
+                nThreads,
+                threadIndex);
+        }
+    }
+}
+
 static void scaleForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnScaleOpCodeConfig *config = (NnScaleOpCodeConfig *)context->opConfig;
     const float *scale = (float *)context->buffers[config->scaleBufferIndex];
@@ -1574,6 +1600,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
+    }
+    if (code == OP_SILU_MUL) {
+        if (quantType == F32_F32_F32) return siluMulForward_F32_F32;
     }
     if (code == OP_SCALE) {
         if (quantType == F32_F32_F32) return scaleForward_F32_F32;
