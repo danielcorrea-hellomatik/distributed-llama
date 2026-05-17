@@ -4,6 +4,42 @@
 #include <cstring>
 #include "nn-executor.hpp"
 
+#ifdef __linux__
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <cstdint>
+
+// EEVDF per-task slice via sched_setattr (Linux 6.6+).
+// Layout matches struct sched_attr (kernel >= 5.13 with util_min/max).
+struct dllama_sched_attr {
+    uint32_t size;
+    uint32_t sched_policy;
+    uint64_t sched_flags;
+    int32_t  sched_nice;
+    uint32_t sched_priority;
+    uint64_t sched_runtime;
+    uint64_t sched_deadline;
+    uint64_t sched_period;
+    uint32_t sched_util_min;
+    uint32_t sched_util_max;
+};
+#ifndef SYS_sched_setattr
+#define SYS_sched_setattr 274
+#endif
+static inline void dllamaSetEevdfSliceNs(uint64_t runtime_ns) {
+    struct dllama_sched_attr a;
+    memset(&a, 0, sizeof(a));
+    a.size = sizeof(a);
+    a.sched_policy = 0;  // SCHED_NORMAL
+    a.sched_runtime = runtime_ns;
+    // Errors silently ignored (older kernels return EINVAL; behaviour unchanged).
+    syscall(SYS_sched_setattr, 0, &a, 0);
+}
+#else
+static inline void dllamaSetEevdfSliceNs(uint64_t) {}
+#endif
+
+
 void NnFakeNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
     // Nothing
 }
@@ -226,6 +262,11 @@ static inline void *executorWorkerLoop(void *arg) {
     NnExecutorThread *thread = (NnExecutorThread *)arg;
     NnExecutorContext *context = thread->context;
     unsigned long long lastGen = 0;
+
+    // R3: ask EEVDF for a 4ms slice (default ~700us). Reduces preemption
+    // during the matmul body while keeping deadline tight for the barrier
+    // wakeup. No-op on non-Linux or pre-6.6 kernels (errors swallowed).
+    dllamaSetEevdfSliceNs(4000000ULL);
 
     while (true) {
         // Wait for next forward() call. Spin on the generation counter; pause
