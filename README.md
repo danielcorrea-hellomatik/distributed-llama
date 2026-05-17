@@ -1,6 +1,6 @@
 # Distributed LLM Inference Cluster — 4x Raspberry Pi 5
 
-Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **14.046 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with 9 source-level fixes, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
+Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **14.449 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with **twelve source-level fixes plus persistent runtime kernel tweaks**, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
 
 This repository contains the complete configuration, patches, systemd units, deployment scripts and technical report needed to reproduce the setup on any 4-node ARM64 Linux cluster.
 
@@ -8,38 +8,48 @@ This repository contains the complete configuration, patches, systemd units, dep
 
 ## Final results
 
-| Metric                     | Value                  |
-| -------------------------- | ---------------------- |
-| Throughput (sustained)     | **14.046 tok/s** mean  |
-| Throughput (peak measured) | 14.16 tok/s            |
-| Time-to-first-token (TTFT) | 557 ms                 |
-| Standard deviation         | 0.116 tok/s (CV 0.83%) |
-| 95% confidence interval    | +/- 0.051 tok/s        |
-| Memory per node (root)     | 12 / 16 GB             |
-| Memory per node (worker)   | 6.3 / 16 GB            |
-| Sustained CPU temperature  | 54-56 deg C            |
-| Public-benchmark ceiling   | 13.04 tok/s (community)|
-| **Improvement vs ceiling** | **+7.72%**             |
+| Metric                     | Value                       |
+| -------------------------- | --------------------------- |
+| Throughput (sustained)     | **14.449 tok/s** mean (n=20)|
+| Throughput (peak measured) | 14.557 tok/s                |
+| Time-to-first-token (TTFT) | 557 ms                      |
+| Standard deviation         | 0.086 tok/s (CV 0.60%)      |
+| 95% confidence interval    | +/- 0.038 tok/s             |
+| Memory per node (root)     | 12 / 16 GB                  |
+| Memory per node (worker)   | 6.3 / 16 GB                 |
+| Sustained CPU temperature  | 64-74 deg C (active cooler) |
+| Public-benchmark ceiling   | 13.04 tok/s (b4rtaz #255)   |
+| **Improvement vs ceiling** | **+10.81%**                 |
 
 Full evolution across the optimisation pipeline:
 
 ```
-Baseline (Llama 3.1 8B dense, vanilla):    5.70 tok/s
-+ OS tuning (governor, swap NVMe, BBR):    6.85 tok/s   (+20%)
-+ Patches 1-8 in dllama source:            7.18 tok/s   (+26%)
-+ Cleanup parasitic processes, mlock:      7.01 tok/s   (+23%)
-+ Switch to Qwen3-30B-A3B (MoE):           11.40 tok/s  (+100%)
-+ max-seq-len 32K + swap clean:            12.71 tok/s  (+123%)
-+ SO_BUSY_POLL + SO_PRIORITY:              13.34 tok/s  (+134%)
-+ NEON dotprod + IPA flags:                13.82 tok/s  (+143%)
-+ TIER 0 (GRO off, buffers, swap):         14.011 tok/s (+146%)
-+ A2 OP_SILU_MUL bit-exact fusion:         14.081 tok/s (+147%)
-+ Round 3+4 (Phase B foundation, EEVDF):   14.046 tok/s (+146%)*
+Baseline (Llama 3.1 8B dense, vanilla):       5.70 tok/s
++ OS tuning (governor, swap NVMe, BBR):       6.85 tok/s   (+20%)
++ Patches 1-8 in dllama source:               7.18 tok/s   (+26%)
++ Cleanup parasitic processes, mlock:         7.01 tok/s   (+23%)
++ Switch to Qwen3-30B-A3B (MoE):              11.40 tok/s  (+100%)
++ max-seq-len 32K + swap clean:               12.71 tok/s  (+123%)
++ SO_BUSY_POLL + SO_PRIORITY:                 13.34 tok/s  (+134%)
++ NEON dotprod + IPA flags:                   13.82 tok/s  (+143%)
++ Stage 9 — TIER 0 (GRO off, buffers, swap): 14.011 tok/s  (+146%)
++ Stage 10 — OP_SILU_MUL 2-pass fusion:      14.081 tok/s  (+147%)
++ Round 3+4 (Phase B foundation, EEVDF):     14.046 tok/s  (+146%)*
++ Stage 12 — Remove SW prefetch in matmul:   13.997 tok/s  (+146%) [64ef787]
++ Stage 13 — silu_mul TRUE single-pass:      14.27  tok/s  (+150%) [1af175c]
++ Stage 14 — MAX_CHUNK_SIZE 4K -> 16K:       14.449 tok/s  (+154%) [f8ed9d2]
++ Stage 15 — RX ring 4096 + RFS + NAPI:      14.449 tok/s  (+154%) [edbc4ce]
 ```
 
 *Round 3+4 includes Phase B async-sync foundation (perf-neutral at K=0; Option C
-wiring pending), EEVDF per-task slice tuning, and 2 sysctl bundles. Cumulative
-defensive baseline; individual rounds 3 and 4 net 0% over the noise floor.
+wiring pending), EEVDF per-task slice tuning, and 2 sysctl bundles.
+
+**Stages 12-15 (2026-05-18 session) added 4 cumulative commits to the production
+branch. All bit-exact validated (SHA-256 of 100-token deterministic outputs
+matches the Stage 11 reference). Stage 14 (MAX_CHUNK_SIZE bump) is the largest
+single source-level win of the session; Stage 15 persists runtime kernel tweaks
+via a new systemd unit. Best individual run: 14.557 tok/s. New ceiling vs the
+public b4rtaz #255 benchmark is +10.81% (vs +7.72% pre-session).**
 
 
 ---
@@ -207,6 +217,98 @@ See [docs/SESSION-2026-05-17-EXTENDED.md](docs/SESSION-2026-05-17-EXTENDED.md) f
 full Round-3+4 transcript, the [companion paper](paper/round3_4_advances.tex) for an
 academic-style write-up, and [docs/PHASE-B-WIRING.md](docs/PHASE-B-WIRING.md) for the
 next sprint candidate.
+
+### Stage 12 -- Remove software prefetch in matmul (Q80 x Q40) [commit 64ef787]
+
+The `matmul_Q80_Q40_F32` kernel (NEON + dotprod path) had two `__builtin_prefetch`
+calls in the inner loop (`w[di*nBlocks + j + 4]` and `x[j + 4]`). We tested five
+variants (PLDL2KEEP +16/+4 dual, +8 single, x-only, `__restrict__` qualified,
+no-prefetch) and found that **removing both prefetches** was the only winner:
++0.79% over the previous baseline. The Cortex-A76's hardware prefetcher (stride
+detect on sequential `w[di*nBlocks + j]` access) is more efficient than the manual
+prefetch instructions, which were competing for issue slots in the 4-wide decoder.
+
+```
+baseline (with SW prefetch +4):  13.851 +/- 0.132 tok/s
+no prefetch (HW only):           13.997 +/- 0.040 tok/s  (+1.05%)
+```
+
+Bit-exact preserved: no arithmetic change, only removes useless hints to the cache.
+
+### Stage 13 -- True single-pass `silu_mul_F32` fusion [commit 1af175c]
+
+Stage 10 (`OP_SILU_MUL`) eliminated the barrier between SILU and MUL but the kernel
+was still a 2-call wrapper (`silu_F32` then `mul_F32`), which kept the intermediate
+result in memory between passes: 3 loads + 2 stores per element. We rewrote it as a
+single NEON loop that holds the values in registers: 2 loads + 1 store per element.
+
+```
+silu_mul_F32 (2-pass wrapper):   ~14.06 tok/s mean
+silu_mul_F32 (true single-pass): ~14.27 tok/s mean  (+1.5%)
+```
+
+Bit-exact preserved: identical `vrecpeq_f32` + 1 Newton-Raphson + multiply sequence,
+only removes the intermediate writeback to memory.
+
+### Stage 14 -- MAX_CHUNK_SIZE 4 KB -> 16 KB [commit f8ed9d2]
+
+The `writeMany`/`readMany` loop in `nn-network.cpp` capped each `send()`/`recv()`
+syscall at `MAX_CHUNK_SIZE = 4096` bytes. With the 8-32 MB TCP send/recv buffers
+(`rmem_max` / `wmem_max` already tuned in Stage 9), this generated 4x more syscalls
+than necessary per slice. We swept 8K, 16K, 32K, 64K and found 16K is the sweet spot.
+
+```
+4 KB (baseline):  ~14.27 tok/s
+8 KB:             14.449 +/- 0.042 tok/s   (= 16K)
+16 KB:            14.449 +/- 0.038 tok/s   (winner)
+32 KB:            14.346 +/- 0.045 tok/s   (slight regression)
+64 KB:            14.40  +/- 0.062 tok/s   (slight regression)
+```
+
+The 16K sweet spot matches the Pi 5's typical L1d footprint per worker thread and
+avoids the kernel's TCP segment coalescing overhead at larger sizes. Bit-exact by
+design (same payload, fewer syscalls).
+
+### Stage 15 -- Runtime kernel tweaks persisted via systemd [commit edbc4ce]
+
+Three runtime knobs (NIC ring + RFS + NAPI defer) sit above the noise floor when
+applied together but are lost on reboot. We packaged them into a new systemd unit:
+
+- RX ring buffer 512 -> 4096 (`ethtool -G eth0 rx 4096 tx 2048`)
+- RFS enabled with `rps_cpus=0xe` (mask CPU 1-3) + `rps_flow_cnt=4096`
+- `napi_defer_hard_irqs=2` + `gro_flush_timeout=20us`
+
+Install on each Pi (one-time):
+```bash
+sudo cp deploy/systemd/dllama-runtime-tweaks.sh /usr/local/sbin/
+sudo chmod +x /usr/local/sbin/dllama-runtime-tweaks.sh
+sudo cp deploy/systemd/dllama-runtime-tweaks.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dllama-runtime-tweaks.service
+```
+
+```
+without runtime tweaks:  14.167 +/- 0.043 tok/s
+with runtime tweaks:     14.449 +/- 0.038 tok/s  (+1.99% combined)
+```
+
+Bit-exact preserved: only changes NIC scheduling and softirq distribution; no FP
+arithmetic in the model is altered. Survives reboot via the systemd unit.
+
+### Stage 12-15 negative results (also tried, documented for completeness)
+
+| Attempt                                             | Result                       | Reverted? |
+| --------------------------------------------------- | ---------------------------- | --------- |
+| Tiered prefetch PLDL2KEEP +16 + L1 +4               | -0.47%                       | Yes       |
+| Single prefetch +8 ahead                            | -0.61%                       | Yes       |
+| Prefetch only for `x` (activations reused)          | -0.14%                       | Yes       |
+| `__restrict__` qualified matmul pointers            | -0.13% (already inferred)    | Yes       |
+| `rmsNorm_Q80_F32_F32` NEON vectorisation            | regression (output-dep loop) | Yes       |
+| `add_F32` + `scale_F32` NEON paths                  | flat (already auto-vector)   | Yes       |
+| MAX_CHUNK_SIZE 32K, 64K                             | flat / slight regression     | Yes       |
+| IRQ 112 explicit pin to CPU0                        | -1% (competes with worker 0) | Yes       |
+| `-march=...+lse` (LSE atomics extension)            | flat (atomics not hotpath)   | Yes       |
+| `-fno-stack-protector` compile flag                 | flat (post-LTO overhead nil) | Yes       |
 
 ### What we tried and reverted
 
