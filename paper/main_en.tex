@@ -63,7 +63,7 @@
   {\Large on a 4-Node Raspberry Pi 5 Cluster}\\[0.4cm]
   \rule{\textwidth}{1.5pt}\\[0.3cm]
   {\large An empirical evaluation of frameworks, optimisations and \\ failure modes for edge LLM serving}\\[0.3cm]
-  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama, 12.71 tok/s sustained (initial), \textbf{14.011 tok/s} post-publication update (Stage 9)}
+  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama, 12.71 tok/s sustained (initial), \textbf{14.046 tok/s} post-publication updates through Round 4 (May 17, 2026)}
 }
 \author{
   \textbf{Daniel Correa Villa}\\
@@ -624,6 +624,133 @@ The structured research round produced a ranked plan of further candidates (full
 \end{itemize}
 
 \textbf{Updated bottom line.} Sustained throughput is now \textbf{14.011 tok/s} ($\pm$0.051 at 95\% CI, $n$=20), \textbf{+7.45\% above the publicly documented ceiling} of 13.04 tok/s for this hardware class (Qwen3-30B-A3B Q40 on 4$\times$Pi 5).
+
+
+
+\section{Post-publication update --- Stages 10 and 11 (A2 op-fusion + Rounds 3 and 4)}
+\label{sec:stage10_11}
+
+After the Stage 9 result (14.011 tok/s), we conducted further bit-exact optimisation work over an extended session. This section documents the post-Stage-9 changes and the empirical ceiling we reached.
+
+\subsection{Stage 10 --- A2 OP\_SILU\_MUL fusion (+0.5\%)}
+
+The Qwen3-MoE FFN per-expert ops are: $w_1$-matmul $\to$ $w_3$-matmul $\to$ silu($w_1$) $\to$ $w_1 \mathbin{*}{=} w_3$. We fused the last two element-wise ops into a single new \texttt{OP\_SILU\_MUL} with one barrier instead of two, eliminating 28~layers $\times$ 8~experts = 224 barriers per token. The kernel chains the existing \texttt{silu\_F32} and \texttt{mul\_F32} kernels verbatim --- output is byte-identical to the previous two-op sequence (validated with deterministic prompt at \texttt{temperature=0}).
+
+\textbf{Measurement} $n$=20: 14.081 $\pm$ 0.055 tok/s vs 14.011 $\pm$ 0.051 baseline. Real gain $+0.50\%$, modest but bit-exact and persistent. Committed at SHA \texttt{106eab3}.
+
+\subsection{Stage 11 --- Rounds 3 and 4 (Linux papers research and ceiling investigation)}
+
+We launched four parallel background research agents:
+\begin{enumerate}[leftmargin=*,nosep]
+  \item Linux Plumbers / SOSP / OSDI / EuroSys / USENIX ATC papers 2024--2026.
+  \item eBPF / XDP / AF\_XDP / io\_uring / kernel-bypass.
+  \item Linux scheduler (EEVDF in 6.6+) tunings.
+  \item ARM-specific kernel cache / prefetcher / NUMA / memory bandwidth.
+\end{enumerate}
+
+We applied and measured $\sim$15 distinct configurations. \textbf{The Round 3+4 net measured improvement is 0\% within the cluster's natural noise floor of $\pm$0.15 tok/s.}
+
+\subsubsection{Phase B foundation cherry-picked}
+
+We cherry-picked four commits from the archived \texttt{opt-b5b6-tiled-sync} branch onto \texttt{pi5-cluster}: \texttt{ce7b96e} (\texttt{--tile-sync K} flag), \texttt{6ebd00f} (writeMany+readMany fix), \texttt{469101e} (async sync orchestrator), \texttt{2aba914} (\texttt{matmul\_Q80\_Q40\_F32\_tiled} wrapper). With \texttt{--tile-sync 0} (default) the cluster behaves identically (measured 14.092 $\pm$ 0.044 tok/s). With \texttt{--tile-sync 4} we measured $-8\%$ regression --- the wrapper subdivides syncs but does not drive the matmul to emit per-tile signals (the Option C wiring, $\sim$40 LOC, remains). Foundation now in repo for a future sprint.
+
+\subsubsection{EEVDF per-task slice}
+
+\texttt{sched\_setattr()} at the start of \texttt{executorWorkerLoop} requesting a 4 ms slice (default $\sim$700 us under EEVDF in kernel 6.12). Confirmed via \texttt{/proc/$\langle$pid$\rangle$/sched} that workers report \texttt{se.slice = 4000000}. Measured 14.061 $\pm$ 0.048 tok/s --- no measurable gain. Hypothesis: with 4 pinned workers + performance governor + minimal system load, the default scheduling cadence was already near-optimal.
+
+\subsubsection{Sysctl bundles (R3 + R4)}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Round 3 and Round 4 sysctls (persisted, defensive).}
+\begin{tabular}{lll}
+\toprule
+\textbf{File} & \textbf{Key} & \textbf{Value} \\
+\midrule
+99-dllama-r3.conf & \texttt{kernel.sched\_autogroup\_enabled} & 0 \\
+                  & \texttt{net.ipv4.tcp\_autocorking}        & 0 \\
+                  & \texttt{net.ipv4.tcp\_slow\_start\_after\_idle} & 0 \\
+                  & \texttt{net.ipv4.tcp\_no\_metrics\_save}  & 1 \\
+99-dllama-r4.conf & \texttt{net.ipv4.tcp\_thin\_linear\_timeouts} & 1 \\
+                  & \texttt{net.core.netdev\_max\_backlog}    & 8192 \\
+                  & \texttt{net.core.rmem\_max}               & 33\,554\,432 \\
+                  & \texttt{net.core.wmem\_max}               & 33\,554\,432 \\
+                  & \texttt{net.ipv4.tcp\_rmem}               & 4096 87380 33\,554\,432 \\
+                  & \texttt{net.ipv4.tcp\_wmem}               & 4096 65536 33\,554\,432 \\
+                  & \texttt{vm.dirty\_bytes}                  & 16\,777\,216 \\
+                  & \texttt{vm.dirty\_background\_bytes}      & 4\,194\,304 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Empirical bottleneck characterisation}
+
+ARM PMU profiling (\texttt{perf stat -e l2d\_cache\_refill,l2d\_cache\_wb,bus\_access,stalled-cycles-backend,cpu-cycles,instructions} for 60 s during sustained inference):
+
+\begin{table}[H]
+\centering
+\small
+\caption{PMU-measured stalls and DRAM traffic during inference (n=4 nodes).}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metric} & \textbf{Root (rpi-1005)} & \textbf{Worker (rpi-1006)} \\
+\midrule
+\texttt{stalled-cycles-backend} (\% cycles) & \textbf{49.25\%} & 47.69\% \\
+\texttt{stalled-cycles-frontend} (\% cycles) & 3.83\% & --- \\
+DRAM read bandwidth & 2.74 GB/s & 2.61 GB/s \\
+DRAM write bandwidth & 8.66 GB/s & 8.47 GB/s \\
+Per-node DRAM total & 11.40 GB/s & 11.08 GB/s \\
+IPC & 1.74 & --- \\
+dTLB miss rate & 0.08\% & --- \\
+iTLB miss rate & 0.01\% & --- \\
+branch-misses & 0.07\% & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 49\% backend-stall rate confirms the cluster is \textbf{DRAM-bandwidth-bound}: CPUs wait on memory roughly half the time. The 3.16$\times$ write-to-read ratio reflects the multi-pass intermediate-buffer pattern in the MoE FFN; the A2 op-fusion (Stage 10) already cuts 224 barriers/token off this path. The TLB miss rates ($<$0.1\%) and branch mispredict rates ($<$0.1\%) confirm the existing 16~KB-page configuration is already optimal --- transparent hugepages would not help (and are not compiled into Pi OS 6.12 anyway).
+
+\subsubsection{Final cluster state and benchmark}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Final benchmark, cold-cluster, $n$=20 paired runs.}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Mean throughput & \textbf{14.046 tok/s} \\
+Median            & 14.024 tok/s \\
+Standard deviation & 0.111 tok/s (CV 0.79\%) \\
+95\% CI           & $\pm$0.049 \\
+\midrule
+$\Delta$ vs.\ Stage 1--8 baseline (13.720) & $+0.326$ ($+2.38\%$) \\
+$\Delta$ vs.\ public ceiling 13.04 (b4rtaz \#255) & $+1.006$ ($+7.72\%$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Updated bottom line}
+
+The cluster sustains \textbf{14.046 tok/s} ($\pm$0.049 at 95\% CI, $n$=20, cold-cluster), \textbf{+7.72\% above the publicly documented ceiling} of 13.04 tok/s for Qwen3-30B-A3B Q40 on $4\times$Pi 5. Round 3 and Round 4 contributed no measurable gain over Stage 9 + A2 individually, but the cumulative defensive state (persisted sysctls, EEVDF tuning, Phase B foundation in repo, +0.5\% A2 fusion) represents a maintainable production baseline.
+
+\subsection{Future work}
+
+The only software lever above the noise floor under bit-exact constraints is \textbf{Phase B Option C} (estimated $+5$--$12\%$):
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item Add \texttt{NnAsyncSyncContext *asyncSync} field to \texttt{NnCpuOpContext}.
+  \item Modify \texttt{matmulForward\_Q80\_Q40\_F32} to dispatch to the tiled variant when \texttt{asyncSync} is set, starting the drain thread before kernel completion.
+  \item Modify \texttt{NnNetworkNodeSynchronizer::sync} to call \texttt{nnAsyncSyncJoin()} on the drain thread's context.
+  \item Op builder in \texttt{llm.cpp} attaches \texttt{NnAsyncSyncContext} to specific Q80$\times$Q40 matmul ops whose output is the next sync's source pipe.
+  \item 50 ms watchdog timeout in the drain thread, \texttt{static\_assert(d \% K == 0)} runtime check, bit-exact 100-token validation at \texttt{seed=42}, and a 60-minute soak test.
+\end{itemize}
+
+Quality-compromise options are deferred (top-$k$=4, Q3 quantisation, REAP pruning --- each projecting $+15$--$40\%$ at the cost of $1$--$3$~pp on reasoning benchmarks).
+
+A separate companion paper, \texttt{paper/round3\_4\_advances.tex}, contains a more detailed academic-style write-up of this investigation including the full table of negative findings and the four-agent research methodology.
 
 
 \begin{thebibliography}{99}

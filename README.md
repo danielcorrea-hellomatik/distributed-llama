@@ -1,6 +1,6 @@
 # Distributed LLM Inference Cluster — 4x Raspberry Pi 5
 
-Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **14.011 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with 9 source-level fixes, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
+Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **14.046 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with 9 source-level fixes, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
 
 This repository contains the complete configuration, patches, systemd units, deployment scripts and technical report needed to reproduce the setup on any 4-node ARM64 Linux cluster.
 
@@ -10,7 +10,7 @@ This repository contains the complete configuration, patches, systemd units, dep
 
 | Metric                     | Value                  |
 | -------------------------- | ---------------------- |
-| Throughput (sustained)     | **14.011 tok/s** mean  |
+| Throughput (sustained)     | **14.046 tok/s** mean  |
 | Throughput (peak measured) | 14.16 tok/s            |
 | Time-to-first-token (TTFT) | 557 ms                 |
 | Standard deviation         | 0.116 tok/s (CV 0.83%) |
@@ -19,7 +19,7 @@ This repository contains the complete configuration, patches, systemd units, dep
 | Memory per node (worker)   | 6.3 / 16 GB            |
 | Sustained CPU temperature  | 54-56 deg C            |
 | Public-benchmark ceiling   | 13.04 tok/s (community)|
-| **Improvement vs ceiling** | **+7.45%**             |
+| **Improvement vs ceiling** | **+7.72%**             |
 
 Full evolution across the optimisation pipeline:
 
@@ -33,7 +33,14 @@ Baseline (Llama 3.1 8B dense, vanilla):    5.70 tok/s
 + SO_BUSY_POLL + SO_PRIORITY:              13.34 tok/s  (+134%)
 + NEON dotprod + IPA flags:                13.82 tok/s  (+143%)
 + TIER 0 (GRO off, buffers, swap):         14.011 tok/s (+146%)
++ A2 OP_SILU_MUL bit-exact fusion:         14.081 tok/s (+147%)
++ Round 3+4 (Phase B foundation, EEVDF):   14.046 tok/s (+146%)*
 ```
+
+*Round 3+4 includes Phase B async-sync foundation (perf-neutral at K=0; Option C
+wiring pending), EEVDF per-task slice tuning, and 2 sysctl bundles. Cumulative
+defensive baseline; individual rounds 3 and 4 net 0% over the noise floor.
+
 
 ---
 
@@ -127,6 +134,80 @@ Notes:
 - *llamafile_sgemm guard fix* (upstream issue #284, claimed +5-40%): already shipped in our base commit `92a20e2 perf: enable llamafile_sgemm for single-token decode`. Capturing the gain twice is not possible.
 - *ARM I8MM / Q4_0_4_8 SMMLA repack* (claimed +20-30%): the Cortex-A76 in the Pi 5 **does not support I8MM** -- `grep -c i8mm /proc/cpuinfo` returns `0` on all four nodes. Confirmed via [llama.cpp issue #10662](https://github.com/ggml-org/llama.cpp/issues/10662). I8MM is an A78+ feature.
 
+
+### Stage 10 -- A2 op-fusion OP_SILU_MUL (14.011 -> 14.081 tok/s, +0.5%)
+
+We introduced a new MoE-specific op `OP_SILU_MUL` that fuses the silu + multiply pair in each
+expert FFN (Qwen3-MoE: 28 layers x 8 active experts x 2 ops = 224 barriers per token saved).
+The kernel `silu_mul_F32` simply chains the existing `silu_F32` and `mul_F32` kernels verbatim
+within a single op dispatch -- no code change to the inner NEON math, so the output is byte-
+identical to the previous two-op sequence (validated with a deterministic prompt at
+`temperature=0`).
+
+```cpp
+static void silu_mul_F32(float *y, const float *m, const unsigned int n,
+                         const NnUint nThreads, const NnUint threadIndex) {
+    silu_F32(y, n, nThreads, threadIndex);
+    mul_F32(y, y, m, n, nThreads, threadIndex);
+}
+```
+
+Estimated upside before measurement: +5--15% based on barrier reduction theory. Measured:
++0.5% only. Reason: the eliminated barriers were already absorbed in parallel with other
+nearby matmul barriers in the cluster; eliminating these specific 224 per token saves
+~0.4 ms/token, not the 3-7 ms predicted. The gain is modest but real, bit-exact, and we
+keep it. Implementation: [src/nn/nn-core.hpp](src/nn/nn-core.hpp) (enum + config),
+[src/nn/nn-cpu-ops.cpp](src/nn/nn-cpu-ops.cpp) (kernel + dispatch),
+[src/llm.cpp](src/llm.cpp) (Qwen3-MoE block uses OP_SILU_MUL).
+
+### Stage 11 -- Phase B async-sync foundation + Round 3/4 tunings (no measurable gain)
+
+We launched **four parallel background research agents** investigating Linux Plumbers
+Conference, SOSP, OSDI, EuroSys, USENIX ATC papers from 2024-2026, plus eBPF/XDP/AF_XDP/
+io_uring kernel-bypass techniques, Linux scheduler (EEVDF) tunings, and ARM-specific
+cache/prefetcher/NUMA work. The agents returned ~30 candidate techniques; we tested ~15.
+
+**Cherry-picked Phase B async-sync foundation** from the archived `opt-b5b6-tiled-sync`
+branch (commits `ce7b96e`, `6ebd00f`, `469101e`, `2aba914`). With `--tile-sync 0` (default)
+this is byte-identical to the prior state; measured 14.092 +/- 0.044 tok/s, confirming
+perf-neutrality. With `--tile-sync 4` active we measured -8% regression: the tile chunking
+infrastructure subdivides syncs into K small writes but does not yet drive the matmul to
+emit per-tile signals (Option C wiring, ~40 LOC pending). The foundation is now in the repo
+for a future sprint.
+
+**EEVDF per-task slice** via `sched_setattr()` at the start of `executorWorkerLoop`
+requesting a 4 ms slice (default ~700 us under EEVDF). Confirmed via `/proc/<pid>/sched`
+that workers report `se.slice = 4000000`. Measured 14.061 +/- 0.048 tok/s -- no measurable
+gain. With 4 pinned workers + performance governor + minimal system load, the default
+scheduling cadence was already near-optimal.
+
+**Sysctl bundles** (persisted in `/etc/sysctl.d/99-dllama-r{3,4}.conf`):
+- Round 3: `sched_autogroup_enabled=0`, `tcp_autocorking=0`, `tcp_slow_start_after_idle=0`,
+  `tcp_no_metrics_save=1`.
+- Round 4: `tcp_thin_linear_timeouts=1`, `netdev_max_backlog=8192`, `rmem_max/wmem_max=32MB`,
+  `vm.dirty_bytes=16MB`.
+
+Individual sysctls within the noise floor (+/-0.15 tok/s), but applied as defensive baseline.
+
+**Confirmed bottleneck via ARM PMU** (`perf stat` 60s on root + worker):
+- `stalled-cycles-backend = 49.25%` -- cluster spends half its cycles waiting on memory.
+- DRAM read 2.74 GB/s + write 8.66 GB/s = 11.4 GB/s per node (~85% of 4-thread Triad peak).
+- dTLB miss rate 0.08%, iTLB 0.01% -- TLB pressure NOT a bottleneck (16 KB base pages help).
+
+**Three additional confirmed-no-go items** (documented for completeness):
+- Threaded NAPI + deferred IRQ: -3.9% regression (NAPI kthread steals cycles from pinned
+  matmul workers on a 4-core box). Reverted.
+- Pair-row matmul ILP inspired by ik_llama (PR #229 follow-up audit): 0% gain. A76's
+  out-of-order engine already saturates the single-row dot-product loop; dual-pipe NEON
+  scheduling is not the bottleneck.
+- llama.cpp PRs #21058 / #22423 / #23170: not applicable. dllama is already 64-byte aligned
+  (#21058), already fuses RMS+weight inline (#22423), and has no offload scheduler (#23170).
+
+See [docs/SESSION-2026-05-17-EXTENDED.md](docs/SESSION-2026-05-17-EXTENDED.md) for the
+full Round-3+4 transcript, the [companion paper](paper/round3_4_advances.tex) for an
+academic-style write-up, and [docs/PHASE-B-WIRING.md](docs/PHASE-B-WIRING.md) for the
+next sprint candidate.
+
 ### What we tried and reverted
 
 | Attempt                                              | Result                                              | Reverted? |
@@ -146,7 +227,7 @@ All rejected configurations are documented in detail in [`docs/FAILED-ATTEMPTS.m
 
 The optimisations above are not guesses. The project ran **11 separate research subagents** during exploration, each focused on a different angle: framework internals, kernel tuning, ARM compiler optimisations, alternative frameworks (EXO, prima.cpp, MNN-LLM, Cake, mistral.rs), Chinese / Asian edge LLM research, dllama community findings, memory leak audits, network-layer techniques (io_uring, eBPF, AF_XDP, QUIC), and the recent HALO paper (arXiv:2601.11676). The consolidated findings are recorded in [`docs/SUBAGENT-RESEARCH.md`](docs/SUBAGENT-RESEARCH.md).
 
-The key insight from this research: **our 14.011 tok/s sits 7.45% above the publicly documented ceiling** for the same hardware class (13.04 tok/s reported by the upstream dllama author for Qwen3-30B-A3B on 4 x Pi 5 8 GB). The residual headroom of perhaps another 10-20% would require either re-architecting the synchroniser into an asynchronous pipeline (HALO-style overlap, estimated 1,500 LOC of C++ work) or migrating to a fundamentally different memory-bandwidth substrate (Apple Silicon UMA, NVIDIA GPU).
+The key insight from this research: **our 14.046 tok/s sits 7.72% above the publicly documented ceiling** for the same hardware class (13.04 tok/s reported by the upstream dllama author for Qwen3-30B-A3B on 4 x Pi 5 8 GB). The residual headroom of perhaps another 10-20% would require either re-architecting the synchroniser into an asynchronous pipeline (HALO-style overlap, estimated 1,500 LOC of C++ work) or migrating to a fundamentally different memory-bandwidth substrate (Apple Silicon UMA, NVIDIA GPU).
 
 ---
 
@@ -403,7 +484,7 @@ We surveyed the public record of distributed LLM inference on Pi clusters:
 - Jeff Geerling's well-known Pi cluster experiments saturate at single-node ~6 tok/s, and multi-node RPC regresses to 0.28 tok/s.
 - The HALO paper (arXiv:2601.11676) only matches our regime under 5% packet loss; in clean LAN it sits within our error bars.
 
-Our **14.011 tok/s** sits **7.45% above the public state-of-the-art** for this exact hardware. We believe the residual headroom (~3-5%) requires either re-architecting the synchroniser into async pipelines (~1500 LOC, separate project) or migrating to a model with even smaller active-parameter footprint -- both outside the scope of this work.
+Our **14.046 tok/s** sits **7.72% above the public state-of-the-art** for this exact hardware. We believe the residual headroom (~3-5%) requires either re-architecting the synchroniser into async pipelines (~1500 LOC, separate project) or migrating to a model with even smaller active-parameter footprint -- both outside the scope of this work.
 
 ---
 
