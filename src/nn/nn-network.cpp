@@ -42,7 +42,7 @@ static inline unsigned long long phaseB_nowUs() {
 #define SOCKET_LAST_ERROR strerror(errno)
 
 #define ACK 23571114
-#define MAX_CHUNK_SIZE 4096
+#define MAX_CHUNK_SIZE 16384
 
 static inline bool isEagainError() {
     #ifdef _WIN32
