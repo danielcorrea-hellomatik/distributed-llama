@@ -1,0 +1,12 @@
+[Unit]
+Description=dllama runtime tweaks (RX ring + RFS + NAPI defer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dllama-runtime-tweaks.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
