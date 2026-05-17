@@ -873,10 +873,48 @@ static void mul_F32(float *y, const float *x, const float *m, const NnUint n, co
 }
 
 static void silu_mul_F32(float *y, const float *m, const unsigned int n, const NnUint nThreads, const NnUint threadIndex) {
-    // Bit-exact fusion: same source code as separate silu_F32 + mul_F32 calls.
-    // Eliminates the inter-op barrier without changing arithmetic.
-    silu_F32(y, n, nThreads, threadIndex);
-    mul_F32(y, y, m, n, nThreads, threadIndex);
+    // True single-pass fusion: silu(y) * m computed in registers without
+    // writing intermediate silu(y) to memory. ~33% reduction in memory traffic
+    // (2 loads + 1 store per elem vs 3 loads + 2 stores in 2-pass version).
+    // Bit-exact equivalent: same recip + NR + multiply sequence.
+    SPLIT_THREADS(start, end, n, nThreads, threadIndex);
+    unsigned int i = start;
+#if defined(__ARM_NEON)
+    const unsigned int count = end - start;
+    const unsigned int neonEnd = end - (count % 4);
+    for (; i < neonEnd; i += 4) {
+        float32x4_t x = vld1q_f32(&y[i]);
+        float32x4_t mv = vld1q_f32(&m[i]);
+        float32x4_t neg_x = vnegq_f32(x);
+        float32x4_t exp_negx = expf_neon(neg_x);
+        float32x4_t denominator = vaddq_f32(exp_negx, vdupq_n_f32(1.0f));
+        float32x4_t recip = vrecpeq_f32(denominator);
+        recip = vmulq_f32(recip, vsubq_f32(vdupq_n_f32(2.0f), vmulq_f32(denominator, recip)));
+        float32x4_t silu_x = vmulq_f32(x, recip);
+        float32x4_t result = vmulq_f32(silu_x, mv);
+        vst1q_f32(&y[i], result);
+    }
+#elif defined(__AVX2__)
+    const unsigned int count = end - start;
+    const unsigned int avxEnd = end - (count % 8);
+    const __m256 ones = _mm256_set1_ps(1.0f);
+    const __m256 zero = _mm256_setzero_ps();
+    for (; i < avxEnd; i += 8) {
+        __m256 x_vec = _mm256_loadu_ps(y + i);
+        __m256 m_vec = _mm256_loadu_ps(m + i);
+        __m256 neg_x = _mm256_sub_ps(zero, x_vec);
+        __m256 exp_negx = expf_avx2(neg_x);
+        __m256 denominator = _mm256_add_ps(ones, exp_negx);
+        __m256 silu_x = _mm256_div_ps(x_vec, denominator);
+        __m256 result = _mm256_mul_ps(silu_x, m_vec);
+        _mm256_storeu_ps(y + i, result);
+    }
+#endif
+    for (; i < end; i++) {
+        float xv = y[i];
+        float silu = xv / (1.0f + expf(-xv));
+        y[i] = silu * m[i];
+    }
 }
 
 static void scale_F32(const float *i, float *o, const float s, NnSize size, NnUint nThreads, NnUint threadIndex) {
