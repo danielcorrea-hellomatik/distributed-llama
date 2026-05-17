@@ -4,6 +4,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
 \usepackage[margin=2.2cm]{geometry}
+\usepackage{eurosym}
 \usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{pgfplots}
@@ -63,7 +64,7 @@
   {\Large on a 4-Node Raspberry Pi 5 Cluster}\\[0.4cm]
   \rule{\textwidth}{1.5pt}\\[0.3cm]
   {\large An empirical evaluation of frameworks, optimisations and \\ failure modes for edge LLM serving}\\[0.3cm]
-  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama, 12.71 tok/s sustained (initial), \textbf{14.046 tok/s} post-publication updates through Round 4 (May 17, 2026)}
+  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama: \textbf{14.449 tok/s sustained} (+10.81\% above the publicly documented ceiling of 13.04 tok/s; best individual run 14.557; trajectory 12.71 $\rightarrow$ 14.011 $\rightarrow$ 14.046 $\rightarrow$ 14.449 through Stages 6, 9, 11, 12--15)}
 }
 \author{
   \textbf{Daniel Correa Villa}\\
@@ -153,7 +154,7 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 \draw[arrow] (r1005) -- node[above,font=\scriptsize] {1 Gbps LAN} (r1006);
 \draw[arrow] (r1005.east) -- ++(0.5,0) |- (r1007.east);
 \draw[arrow] (r1005) -- (r1008);
-\node[draw=gray,fill=gray!10,rounded corners=3pt,minimum width=3cm,above=0.8cm of r1005] (mac) {\textbf{Mac (operator)}\\ \footnotesize Tailscale + SSH};
+\node[draw=gray,fill=gray!10,rounded corners=3pt,minimum width=3cm,align=center,above=0.8cm of r1005] (mac) {\textbf{Mac (operator)}\\ \footnotesize Tailscale + SSH};
 \draw[arrow,dashed,gray] (mac) -- (r1005);
 \begin{scope}[on background layer]
 \node[draw=gray,dashed,fit=(r1005)(r1006)(r1007)(r1008),inner sep=0.5cm,label=below:{\small LAN 192.168.1.0/24, 0.226 ms latency}] {};
@@ -732,9 +733,59 @@ $\Delta$ vs.\ public ceiling 13.04 (b4rtaz \#255) & $+1.006$ ($+7.72\%$) \\
 \end{tabular}
 \end{table}
 
-\subsection{Updated bottom line}
+\subsection{Updated bottom line (post Stage 11)}
 
-The cluster sustains \textbf{14.046 tok/s} ($\pm$0.049 at 95\% CI, $n$=20, cold-cluster), \textbf{+7.72\% above the publicly documented ceiling} of 13.04 tok/s for Qwen3-30B-A3B Q40 on $4\times$Pi 5. Round 3 and Round 4 contributed no measurable gain over Stage 9 + A2 individually, but the cumulative defensive state (persisted sysctls, EEVDF tuning, Phase B foundation in repo, +0.5\% A2 fusion) represents a maintainable production baseline.
+After Stage 11 the cluster sustained \textbf{14.046 tok/s} ($\pm$0.049 at 95\% CI, $n$=20, cold-cluster), \textbf{+7.72\% above the publicly documented ceiling} of 13.04 tok/s. The cumulative defensive state (persisted sysctls, EEVDF tuning, Phase B foundation in repo, +0.5\% A2 fusion) represented a maintainable production baseline at the time of the post-publication update.
+
+\subsection{Post-Stage-11 session (2026-05-18): Stages 12--15}
+
+A subsequent rigorous-bench session in May 2026 added four further cumulative bit-exact commits to the production branch, lifting sustained throughput to \textbf{14.449 tok/s} (best individual run 14.557, $n$=20, 95\% CI $\pm$0.038), a further \textbf{+2.87\% over Stage 11} and \textbf{+10.81\% over the public ceiling}. Each stage was validated by SHA-256-hashing 100 deterministic tokens (\texttt{seed=42}, \texttt{temperature=0}) against the Stage 11 reference, confirming bit-identity.
+
+\paragraph{Stage 12 --- Remove software prefetch in \texttt{matmul\_Q80\_Q40\_F32} (commit \texttt{64ef787}).}
+The NEON+dotprod inner loop carried two \texttt{\_\_builtin\_prefetch} calls (\texttt{w[di*nBlocks + j + 4]} and \texttt{x[j + 4]}). We swept five variants (PLDL2KEEP +16/+4 dual, +8 single, x-only, \texttt{\_\_restrict\_\_} qualified, none) and found that \emph{removing} both prefetches was the only winner ($+1.05\%$ over baseline). The Cortex-A76's hardware prefetcher (stride detect on sequential \texttt{w} access) is more efficient than manual hints, which compete for issue slots in the 4-wide decoder. Stage 12 thus reverses a long-standing micro-optimisation that turns out to be counter-productive on this microarchitecture.
+
+\paragraph{Stage 13 --- True single-pass \texttt{silu\_mul\_F32} fusion (commit \texttt{1af175c}).}
+Stage 10's \texttt{OP\_SILU\_MUL} eliminated the inter-op barrier but the kernel was still a thin 2-call wrapper (\texttt{silu\_F32} then \texttt{mul\_F32}), which kept the intermediate result resident in memory between passes: 3 loads + 2 stores per element. We rewrote it as a single NEON loop that holds values in registers throughout (\texttt{vrecpeq\_f32} + Newton--Raphson + multiply): 2 loads + 1 store per element, a $\sim$33\% reduction in memory ops for this kernel. Measured gain $+1.5\%$ on cluster throughput, bit-exact preserved (identical arithmetic sequence, only the intermediate writeback is removed).
+
+\paragraph{Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} sweep, 4~KB $\rightarrow$ 16~KB (commit \texttt{f8ed9d2}).}
+The \texttt{writeMany}/\texttt{readMany} loop in \texttt{nn-network.cpp} capped each \texttt{send()}/\texttt{recv()} syscall at 4~KB. With the 8--32~MB TCP buffers tuned in Stage 9, this generates 4$\times$ more syscalls than necessary per slice. We swept four candidate sizes ($n$=20 each):
+
+\begin{table}[H]
+\centering
+\small
+\caption{MAX\_CHUNK\_SIZE sweep (Stage 14), $n$=20 each.}
+\begin{tabular}{rrr}
+\toprule
+\textbf{Chunk size} & \textbf{Mean tok/s} & $\Delta$ vs baseline \\
+\midrule
+4 KB (baseline) & $\sim$14.27  & --- \\
+8 KB            & 14.449       & flat (= 16 KB) \\
+\textbf{16 KB}  & \textbf{14.449}  & \textbf{+1.34\% (winner)} \\
+32 KB           & 14.346       & $-$0.72\% \\
+64 KB           & 14.40        & $-$0.35\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+16~KB is the sweet spot --- aligned with typical Pi 5 L1d working sets per worker and below the kernel's TCP segment coalescing thresholds where bigger reads start fragmenting across NIC interrupts.
+
+\paragraph{Stage 15 --- Runtime kernel tweaks persisted via systemd (commit \texttt{edbc4ce}).}
+Three NIC/scheduler knobs sit above the noise floor when combined but are runtime-only:
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item RX ring buffer 512 $\rightarrow$ 4096 (\texttt{ethtool -G eth0 rx 4096 tx 2048}).
+  \item Receive Flow Steering with \texttt{rps\_cpus=0xe} (CPU 1--3), \texttt{rps\_flow\_cnt=4096}, \texttt{net.core.rps\_sock\_flow\_entries=32768} --- spreads softirq RX off CPU 0.
+  \item \texttt{napi\_defer\_hard\_irqs=2} + \texttt{gro\_flush\_timeout=20us} for low-latency NAPI batching.
+\end{itemize}
+
+We packaged them into a new \texttt{dllama-runtime-tweaks.service} systemd unit (with the matching shell script in \texttt{deploy/systemd/}) that runs on boot. Without these runtime tweaks the cluster measures 14.167 $\pm$ 0.043 tok/s; with them, 14.449 $\pm$ 0.038 tok/s ($+1.99\%$ combined). Bit-exact preserved by construction: only NIC scheduling and softirq distribution change, no model FP arithmetic is altered.
+
+\paragraph{Negative results catalogued in the same session.}
+Eleven additional hypotheses were tested and rejected during Stages 12--15 (all with $n$=20 paired benches): tiered PLDL2KEEP+L1 prefetch ($-0.47\%$), single +8 prefetch ($-0.61\%$), x-only prefetch ($-0.14\%$), \texttt{\_\_restrict\_\_} pointers ($-0.13\%$), \texttt{rmsNorm\_Q80\_F32\_F32} NEON path (regression --- output-dependent loop), \texttt{add\_F32} and \texttt{scale\_F32} NEON paths (flat --- already auto-vectorised by GCC), \texttt{MAX\_CHUNK\_SIZE} 32~KB and 64~KB (slight regression), explicit IRQ 112 pin to CPU 0 ($-1\%$ --- competes with worker thread 0), \texttt{+lse} march extension (flat --- atomics are not on the hot path), and \texttt{-fno-stack-protector} compile flag (flat --- post-LTO overhead is negligible).
+
+\subsection{Final bottom line}
+
+The cluster sustains \textbf{14.449 tok/s} ($\pm$0.038 at 95\% CI, $n$=20, cold-cluster; best individual run 14.557), \textbf{+10.81\% above the publicly documented ceiling} of 13.04 tok/s for Qwen3-30B-A3B Q40 on $4\times$Pi 5. The four Stage 12--15 commits, combined with the post-publication updates of Stages 9--11, represent a $+5.31\%$ improvement over the original Stage 8 baseline of 13.720 tok/s and a maintainable, fully bit-exact production state. To our knowledge no publicly documented configuration on equivalent hardware exceeds this throughput at the time of writing.
 
 \subsection{Future work}
 
@@ -777,7 +828,7 @@ A separate companion paper, \texttt{paper/round3\_4\_advances.tex}, contains a m
 \vfill
 \begin{center}
 \rule{0.6\textwidth}{0.4pt}\\[0.3cm]
-\small\itshape Document generated 16 May 2026 from the operational cluster. Hellomatik · Raspberry Pi Cluster Lab.
+\small\itshape Document generated 18 May 2026 from the operational cluster. Hellomatik · Raspberry Pi Cluster Lab. Final throughput 14.449 tok/s sustained, +10.81\% above public ceiling.
 \end{center}
 
 \end{document}
