@@ -249,8 +249,8 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         
 #if defined(__ARM_FEATURE_DOTPROD)
         for (; j + 3 < nBlocks; j += 4) {
-            __builtin_prefetch(&w[di * nBlocks + j + 4]);
-            __builtin_prefetch(&x[j + 4]);
+            /* prefetch removed - HW prefetcher handles streaming */
+            /* prefetch removed - HW prefetcher handles streaming */
 
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
             const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
