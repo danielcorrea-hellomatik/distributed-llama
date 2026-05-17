@@ -1,6 +1,6 @@
 # Distributed LLM Inference Cluster — 4x Raspberry Pi 5
 
-Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **13.82 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with 9 source-level fixes, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
+Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **14.011 tokens/second sustained** on 4x Raspberry Pi 5 16GB. Built on a patched fork of `distributed-llama` v0.16.5 with 9 source-level fixes, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows.
 
 This repository contains the complete configuration, patches, systemd units, deployment scripts and technical report needed to reproduce the setup on any 4-node ARM64 Linux cluster.
 
@@ -10,16 +10,16 @@ This repository contains the complete configuration, patches, systemd units, dep
 
 | Metric                     | Value                  |
 | -------------------------- | ---------------------- |
-| Throughput (sustained)     | **13.82 tok/s** mean   |
-| Throughput (peak measured) | 14.14 tok/s            |
+| Throughput (sustained)     | **14.011 tok/s** mean  |
+| Throughput (peak measured) | 14.16 tok/s            |
 | Time-to-first-token (TTFT) | 557 ms                 |
-| Standard deviation         | 0.114 tok/s (CV 0.82%) |
-| 95% confidence interval    | +/- 0.050 tok/s        |
+| Standard deviation         | 0.116 tok/s (CV 0.83%) |
+| 95% confidence interval    | +/- 0.051 tok/s        |
 | Memory per node (root)     | 12 / 16 GB             |
 | Memory per node (worker)   | 6.3 / 16 GB            |
 | Sustained CPU temperature  | 54-56 deg C            |
 | Public-benchmark ceiling   | 13.04 tok/s (community)|
-| **Improvement vs ceiling** | **+6.0%**              |
+| **Improvement vs ceiling** | **+7.45%**             |
 
 Full evolution across the optimisation pipeline:
 
@@ -32,6 +32,7 @@ Baseline (Llama 3.1 8B dense, vanilla):    5.70 tok/s
 + max-seq-len 32K + swap clean:            12.71 tok/s  (+123%)
 + SO_BUSY_POLL + SO_PRIORITY:              13.34 tok/s  (+134%)
 + NEON dotprod + IPA flags:                13.82 tok/s  (+143%)
++ TIER 0 (GRO off, buffers, swap):         14.011 tok/s (+146%)
 ```
 
 ---
@@ -98,6 +99,34 @@ The recompiled binary contained **322 `udot/sdot` instructions**. Each contribut
 
 `ethtool -C eth0 rx-usecs 10 tx-usecs 10` (down from the default 49) reduces the interrupt coalescing window. On our 0.226 ms LAN this was within the measurement noise (CV 0.7%), but we keep it because the theoretical benefit is real and the cost is zero.
 
+### Stage 9 -- Kernel sysctls + GRO disable (13.72 -> 14.011 tok/s, +2.12%)
+
+After re-baselining the cluster at **13.720 +/- 0.050 tok/s** (post-Phase B foundation work, see [docs/SESSION-2026-05-17.md](docs/SESSION-2026-05-17.md)), we applied a low-risk batch of OS-level network tunings driven by a six-subagent research round. Each Pi received:
+
+- `ethtool -K eth0 gro off` -- Generic Receive Offload coalesces incoming packets, adding 50-200 us of intentional latency. For 510 KB sync bursts on a 1 GbE LAN this is pure overhead.
+- `net.core.rmem_max = 8388608` (was 256 KB) and `net.core.wmem_max = 8388608` -- allow TCP receive/send windows to grow past the 256 KB sync bursts.
+- `net.ipv4.tcp_rmem = 4096 87380 8388608` and `net.ipv4.tcp_wmem = 4096 65536 8388608` -- per-socket auto-tune ceilings; the previous `tcp_wmem` middle value of 16 KB was a hard bottleneck.
+- `vm.swappiness = 1` (was 60) -- with 5.5 GB resident on 16 GB RAM there is no swap pressure; this disables proactive paging.
+
+Changes are persistent via `/etc/sysctl.d/99-dllama.conf` and `/etc/systemd/system/dllama-eth-tune.service` on every node, surviving reboot.
+
+Measured impact (n=20, paired, 95% CI):
+
+| Metric  | Pre-Stage 9     | Post-Stage 9     |
+|---------|-----------------|------------------|
+| Mean    | 13.720 tok/s    | **14.011 tok/s** |
+| Stdev   | 0.050 tok/s     | 0.116 tok/s      |
+| 95% CI  | +/- 0.022       | +/- 0.051        |
+
+Notes:
+- `busy_poll = busy_read = 50` was already set from Stage 6; not re-applied.
+- Stdev increased (0.050 -> 0.116) because GRO removal exposes per-packet jitter previously masked by RX coalescing. Net positive, but worth monitoring before integrating Phase B (which adds its own timing variance).
+- `net.core.netdev_budget_usecs = 4000` was attempted but rejected by the kernel (`Invalid argument`); the existing 8000 was kept.
+
+**Two findings rejected during this research round** (both saved as cautionary tales):
+- *llamafile_sgemm guard fix* (upstream issue #284, claimed +5-40%): already shipped in our base commit `92a20e2 perf: enable llamafile_sgemm for single-token decode`. Capturing the gain twice is not possible.
+- *ARM I8MM / Q4_0_4_8 SMMLA repack* (claimed +20-30%): the Cortex-A76 in the Pi 5 **does not support I8MM** -- `grep -c i8mm /proc/cpuinfo` returns `0` on all four nodes. Confirmed via [llama.cpp issue #10662](https://github.com/ggml-org/llama.cpp/issues/10662). I8MM is an A78+ feature.
+
 ### What we tried and reverted
 
 | Attempt                                              | Result                                              | Reverted? |
@@ -117,7 +146,7 @@ All rejected configurations are documented in detail in [`docs/FAILED-ATTEMPTS.m
 
 The optimisations above are not guesses. The project ran **11 separate research subagents** during exploration, each focused on a different angle: framework internals, kernel tuning, ARM compiler optimisations, alternative frameworks (EXO, prima.cpp, MNN-LLM, Cake, mistral.rs), Chinese / Asian edge LLM research, dllama community findings, memory leak audits, network-layer techniques (io_uring, eBPF, AF_XDP, QUIC), and the recent HALO paper (arXiv:2601.11676). The consolidated findings are recorded in [`docs/SUBAGENT-RESEARCH.md`](docs/SUBAGENT-RESEARCH.md).
 
-The key insight from this research: **our 13.82 tok/s sits 6% above the publicly documented ceiling** for the same hardware class (13.04 tok/s reported by the upstream dllama author for Qwen3-30B-A3B on 4 x Pi 5 8 GB). The residual headroom of perhaps another 10-20% would require either re-architecting the synchroniser into an asynchronous pipeline (HALO-style overlap, estimated 1,500 LOC of C++ work) or migrating to a fundamentally different memory-bandwidth substrate (Apple Silicon UMA, NVIDIA GPU).
+The key insight from this research: **our 14.011 tok/s sits 7.45% above the publicly documented ceiling** for the same hardware class (13.04 tok/s reported by the upstream dllama author for Qwen3-30B-A3B on 4 x Pi 5 8 GB). The residual headroom of perhaps another 10-20% would require either re-architecting the synchroniser into an asynchronous pipeline (HALO-style overlap, estimated 1,500 LOC of C++ work) or migrating to a fundamentally different memory-bandwidth substrate (Apple Silicon UMA, NVIDIA GPU).
 
 ---
 
@@ -374,7 +403,7 @@ We surveyed the public record of distributed LLM inference on Pi clusters:
 - Jeff Geerling's well-known Pi cluster experiments saturate at single-node ~6 tok/s, and multi-node RPC regresses to 0.28 tok/s.
 - The HALO paper (arXiv:2601.11676) only matches our regime under 5% packet loss; in clean LAN it sits within our error bars.
 
-Our **13.82 tok/s** sits **6.0% above the public state-of-the-art** for this exact hardware. We believe the residual headroom (~3-5%) requires either re-architecting the synchroniser into async pipelines (~1500 LOC, separate project) or migrating to a model with even smaller active-parameter footprint -- both outside the scope of this work.
+Our **14.011 tok/s** sits **7.45% above the public state-of-the-art** for this exact hardware. We believe the residual headroom (~3-5%) requires either re-architecting the synchroniser into async pipelines (~1500 LOC, separate project) or migrating to a model with even smaller active-parameter footprint -- both outside the scope of this work.
 
 ---
 

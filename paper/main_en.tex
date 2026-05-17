@@ -63,7 +63,7 @@
   {\Large on a 4-Node Raspberry Pi 5 Cluster}\\[0.4cm]
   \rule{\textwidth}{1.5pt}\\[0.3cm]
   {\large An empirical evaluation of frameworks, optimisations and \\ failure modes for edge LLM serving}\\[0.3cm]
-  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama, 12.71 tok/s sustained}
+  {\normalsize Qwen3-30B-A3B (MoE) over patched distributed-llama, 12.71 tok/s sustained (initial), \textbf{14.011 tok/s} post-publication update (Stage 9)}
 }
 \author{
   \textbf{Daniel Correa Villa}\\
@@ -550,6 +550,81 @@ python3 /tmp/academic_bench.py
 python3 /tmp/full_bench.py
 \end{lstlisting}
 Each invokes \texttt{curl} against \texttt{http://localhost:9999/v1/chat/completions} with \texttt{temperature=0} and a fixed prompt. Output is logged to stdout. The cluster systemd units, source patches and \texttt{cluster-control.sh} operator script are provided alongside this report.
+
+
+\section{Post-publication update --- Stage 9 (TIER 0 OS-level tuning)}
+\label{sec:stage9}
+
+After the initial publication of this report at 12.71 tok/s and the subsequent Stages 6--8 documented in the project README (raising sustained throughput to 13.82 tok/s), a structured six-subagent research round identified one further round of OS-level network and memory tunings that yielded a measurable improvement without any source-code changes.
+
+\subsection{Configuration changes}
+
+Applied to all four Pi 5 nodes, persisted via \texttt{/etc/sysctl.d/99-dllama.conf} and a \texttt{dllama-eth-tune.service} systemd unit:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Setting} & \textbf{Before} & \textbf{After} \\
+\midrule
+\texttt{ethtool -K eth0 gro} & on & off \\
+\texttt{net.core.rmem\_max}  & 212\,992 & 8\,388\,608 \\
+\texttt{net.core.wmem\_max}  & 212\,992 & 8\,388\,608 \\
+\texttt{net.ipv4.tcp\_rmem (mid/max)} & 131\,072 / 6\,291\,456 & 87\,380 / 8\,388\,608 \\
+\texttt{net.ipv4.tcp\_wmem (mid/max)} & 16\,384 / 4\,194\,304 & 65\,536 / 8\,388\,608 \\
+\texttt{vm.swappiness}       & 60 & 1 \\
+\bottomrule
+\end{tabular}
+\caption{Stage 9 sysctl and \texttt{ethtool} changes.}
+\end{table}
+
+\textit{Rationale.} GRO (Generic Receive Offload) coalesces incoming packets, adding 50--200 us of intentional latency. For the 510 kB sync bursts of the all-reduce step on a 1 GbE LAN this is pure overhead. Raising \texttt{rmem\_max}/\texttt{wmem\_max} from the 256 kB default allows the TCP receive/send windows to grow past the burst size. The \texttt{tcp\_wmem} middle of 16 kB was a hard bottleneck for the worker$\to$root activation send.
+
+\subsection{Measured impact}
+
+Re-baselined (post-Phase B foundation work) at \textbf{13.720 \(\pm\) 0.050 tok/s} (n=20). Post-Stage 9 measurement (n=20, paired, 95\% CI):
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metric}  & \textbf{Pre-Stage 9} & \textbf{Post-Stage 9} \\
+\midrule
+Mean             & 13.720 tok/s & \textbf{14.011 tok/s} \\
+Stdev            & 0.050        & 0.116                 \\
+95\% CI          & $\pm$0.022   & $\pm$0.051            \\
+\midrule
+$\Delta$ vs.\ Stage 8 baseline & --- & +2.12\% \\
+$\Delta$ vs.\ public ceiling (13.04) & --- & +7.45\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Two rejected candidates from the same research round}
+
+The same six-subagent research round surfaced two further claims that were investigated and rejected:
+
+\begin{enumerate}[leftmargin=*,nosep]
+  \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} months earlier. Cannot be captured twice.
+  \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error from an LLM research subagent and is documented here as a cautionary tale.
+\end{enumerate}
+
+\subsection{Open work after Stage 9}
+
+The structured research round produced a ranked plan of further candidates (full plan in \texttt{docs/SESSION-2026-05-17.md}):
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \textbf{Tier 2 --- Close Phase B (Option C, $\sim$40 LOC)}: the \texttt{opt-b5b6-tiled-sync} branch carries 562 LOC of async-sync orchestrator, tiled matmul wrapper, and the \texttt{--tile-sync K} flag, all compiled but unwired. Estimated additional +5--12\%; high integration risk (the same code path that broke the cluster during PGO and \texttt{isolcpus} experiments).
+  \item \textbf{Tier 3a --- Hierarchical 2-stage all-reduce}: with $N=4$ nodes, butterfly recursive-halving needs $\log_2(4)=2$ rounds instead of the $2(N-1)=6$ rounds of the current ring. Estimated +10--13\%, $\sim$80--120 LOC.
+  \item \textbf{Tier 3b --- Pre-attention expert prediction} (arXiv:2511.10676): specific to Qwen3-30B-A3B, reported 94.69\% top-$k$ accuracy. Estimated +8--15\%, $\sim$250 LOC, low risk (fallback to on-demand load).
+  \item \textbf{Tier 4 --- Fused ffn\_up + ffn\_gate + silu MoE op} from ik\_llama.cpp PR \#229; estimated +8--12\%, $\sim$400 LOC.
+  \item \textbf{Tier 5 --- REAP 25\% expert pruning} (Cerebras), offline, 0 dllama LOC; estimated +15--25\%, requires quality validation.
+\end{itemize}
+
+\textbf{Updated bottom line.} Sustained throughput is now \textbf{14.011 tok/s} ($\pm$0.051 at 95\% CI, $n$=20), \textbf{+7.45\% above the publicly documented ceiling} of 13.04 tok/s for this hardware class (Qwen3-30B-A3B Q40 on 4$\times$Pi 5).
+
 
 \begin{thebibliography}{99}
 \small
