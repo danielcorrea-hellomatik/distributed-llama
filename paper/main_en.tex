@@ -1,51 +1,99 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,a4paper]{article}
 
+% Typography — OpenAI / Anthropic technical-report style
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-\usepackage[margin=2.2cm]{geometry}
+% Note: mathptmx + helvet + courier not available in this minimal TeX
+% install; fall back to the default Computer Modern font family.
+% Disable microtype expansion (incompatible with CM bitmap fonts);
+% protrusion (margin kerning) still works and provides ~80% of the
+% visual quality improvement.
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[margin=2.5cm,top=2.2cm,bottom=2.5cm]{geometry}
+
+% Math + symbols
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{siunitx}
 \usepackage{eurosym}
+
+% Floats, tables, lists
+\usepackage{booktabs}            % horizontal rules \toprule \midrule \bottomrule
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=3pt}
+
+% Graphics + diagrams
 \usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{shapes,arrows,positioning,fit,backgrounds,decorations.pathreplacing}
-\usepackage{booktabs}
-\usepackage{siunitx}
-\usepackage{enumitem}
-\usepackage[hidelinks]{hyperref}
-\usepackage{titling}
-\usepackage{float}
-\usepackage{caption}
+
+% Captions — small, italic, no colour
+\usepackage[font=small,labelfont=bf,labelsep=period,justification=justified]{caption}
+
+% Hyperref — clean, no boxes, no colour by default
+\usepackage[hidelinks,breaklinks=true,bookmarks=true,bookmarksopen=true,unicode=true]{hyperref}
+
+% Code listings — minimal, monospace, no background
 \usepackage{listings}
 \usepackage{verbatim}
-\usepackage{multirow}
-
-% Academic-style colours (subtle, used only for figures/tables, not headings)
-\definecolor{primary}{RGB}{30,80,140}
-\definecolor{accent}{RGB}{200,80,40}
-\definecolor{ok}{RGB}{40,140,60}
-\definecolor{warn}{RGB}{200,140,30}
-\definecolor{err}{RGB}{180,40,40}
-\definecolor{codebg}{RGB}{245,245,248}
-
 \lstset{
   basicstyle=\ttfamily\footnotesize,
-  backgroundcolor=\color{codebg},
   frame=single,
+  framerule=0.3pt,
+  rulecolor=\color{black!40},
   breaklines=true,
   showstringspaces=false,
   language=bash,
+  aboveskip=8pt,
+  belowskip=8pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
 }
 
-\title{Distributed LLM Inference on a 4-Node Raspberry Pi~5 Cluster:\\[0.2cm]
-       An Empirical Evaluation of Frameworks, Bit-Exact Optimisations,\\[0.05cm]
-       and Failure Modes for Edge Mixture-of-Experts Serving}
-\author{
-  \textbf{Daniel Correa Villa}\\
-  \small Hellomatik --- Raspberry Pi Cluster Lab\\
-  \small \texttt{}
+% Subtle figure/table accent (kept neutral, no decorations)
+\definecolor{primary}{RGB}{30,30,30}
+\definecolor{accent}{RGB}{160,55,30}
+\definecolor{ok}{RGB}{40,120,60}
+\definecolor{warn}{RGB}{170,120,30}
+\definecolor{err}{RGB}{150,40,40}
+\definecolor{codebg}{RGB}{248,248,248}
+
+% Section headings — clean bold, no colour (OpenAI/NeurIPS style)
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+
+% Title block — centred, no rules, NeurIPS/OpenAI style
+\usepackage{titling}
+\pretitle{\begin{center}\Large\bfseries}
+\posttitle{\par\end{center}\vspace{-0.4em}}
+\preauthor{\begin{center}\normalsize}
+\postauthor{\par\end{center}\vspace{-0.4em}}
+\predate{\begin{center}\small\itshape}
+\postdate{\par\end{center}}
+
+% Abstract environment — centred title, smaller font, indented
+\renewenvironment{abstract}{%
+  \vspace{6pt}\begin{center}\normalsize\bfseries Abstract\end{center}%
+  \begin{quote}\noindent\small%
+}{%
+  \end{quote}\vspace{6pt}%
 }
+
+\title{Distributed LLM Inference on a 4-Node Raspberry Pi~5 Cluster:\\[0.15cm]
+       An Empirical Evaluation of Frameworks, Bit-Exact Optimisations,\\
+       and Failure Modes for Edge Mixture-of-Experts Serving}
+\author{Daniel Correa Villa\\
+  \small Hellomatik --- Raspberry Pi Cluster Lab\\
+  \small \texttt{}}
 \date{18 May 2026}
 
 \begin{document}
@@ -55,12 +103,19 @@
 
 \begin{abstract}
 \noindent
-We report on the design, optimisation and rigorous benchmarking of a four-node Raspberry Pi~5 (16~GB) cluster for distributed inference of a 30B-parameter Mixture-of-Experts (MoE) language model, Qwen3-30B-A3B (3B active parameters per token, top-8 of 128 experts), over Gigabit Ethernet. After exhausting framework alternatives infeasible on ARM Linux without GPU/NPU acceleration (EXO, prima.cpp, llama.cpp RPC), we adopt \texttt{distributed-llama} v0.16.5 with twelve source-level patches developed in this work plus persistent runtime kernel tuning. Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, the cluster's sustained throughput improves from 5.70~tok/s (Llama~3.1~8B dense baseline) to \textbf{14.449~tok/s} (Qwen3-30B-A3B MoE, $n$=20 paired benchmark, 95\% CI $\pm$0.038), with a best individual run of 14.557~tok/s. The final throughput is \textbf{+10.81\%} above the previously highest publicly documented configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255), and \textbf{+5.31\%} above the Stage~8 baseline (13.720~tok/s) prior to the operating-system tuning, MoE op-fusion, network chunk-size sweep, runtime NIC tuning, and removal of counter-productive software prefetch documented herein. ARM PMU profiling confirms the residual bottleneck is the LPDDR4X memory bandwidth (49\% backend-stalled cycles, 11.4~GB/s of an approximate 17~GB/s ceiling per node). We catalogue twenty-six unsuccessful configurations and rejected hypotheses, and identify a single class of bit-exact software optimisation likely to lift sustained throughput further (\emph{Async Tensor Parallelism}; an estimated 250~LOC integration based on the in-repo Phase~B foundation).
+We report on the design, optimisation and rigorous benchmarking of a four-node Raspberry Pi~5 (16~GB) cluster for distributed inference of a 30B-parameter Mixture-of-Experts (MoE) language model, Qwen3-30B-A3B (3B active parameters per token, top-8 of 128 experts), over Gigabit Ethernet. The investigation passes through two distinct baselines: an initial \textbf{Llama~3.1~8B dense baseline at 5.70~tok/s} (subsequently abandoned as architecturally unsuitable for the LPDDR4X memory subsystem of the Pi~5), and the \textbf{Qwen3-30B-A3B MoE baseline at 11.40~tok/s} (Stage~4, first measurement after model switch) which becomes the operational starting point for the optimisation work proper. After exhausting framework alternatives infeasible on ARM Linux without GPU/NPU acceleration (EXO requires Apple MLX; prima.cpp hangs on ZMQ topology discovery; llama.cpp RPC regresses 25$\times$), we adopt \texttt{distributed-llama} v0.16.5 with twelve source-level patches developed in this work plus persistent runtime kernel tuning.
+
+Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, the cluster's sustained throughput rises from the 11.40~tok/s Qwen3 baseline to \textbf{14.449~tok/s} ($n$=20 paired benchmark, 95\% CI $\pm$0.038, best individual run 14.557~tok/s), a \textbf{+26.75\% gain attributable to the source and kernel-level optimisation work itself}, and \textbf{+10.81\%} above the previously highest publicly documented configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255). Relative to the Stage~8 baseline (13.720~tok/s, last pre-investigation measurement of the production branch) the gain is \textbf{+5.31\%} from the operating-system tuning, MoE op-fusion, network chunk-size sweep, runtime NIC tuning, and inversion of a counter-productive software prefetch documented herein (paired Welch's $t$=51.9, $p\!\ll\!0.001$).
+
+ARM PMU profiling confirms the residual bottleneck is the LPDDR4X memory bandwidth (49\% backend-stalled cycles, 11.4~GB/s sustained per node out of an approximate 17~GB/s ceiling). We catalogue twenty-six unsuccessful configurations and rejected hypotheses, document the empirical constraint discovery process (strict bit-exact, no kernel rebuild, no model change, no overclock) that progressively narrowed the design space, and identify a single class of bit-exact software optimisation likely to lift sustained throughput further (\emph{Async Tensor Parallelism}; an estimated 250~LOC integration based on the Phase~B foundation already shipped in the repository).
 \end{abstract}
 
 \section{Introduction}
 
-Edge inference of large language models on consumer single-board computers (SBCs) is increasingly studied as a privacy-preserving, low-cost alternative to cloud inference \cite{geerling2025,stratosphere2025}. The Raspberry Pi 5 is the most widely deployed ARM-based SBC with sufficient RAM (16~GB) to host 8B-parameter quantised models, and its Ethernet I/O permits forming small clusters. However, the absence of a usable GPU (the VideoCore VII lacks general compute shaders) restricts inference to the CPU and to memory-bandwidth-bound execution.
+Edge inference of large language models on consumer single-board computers (SBCs) is increasingly studied as a privacy-preserving, low-cost alternative to cloud inference \cite{geerling2025,stratosphere2025}. The Raspberry Pi~5 is the most widely deployed ARM-based SBC with sufficient RAM (16~GB) to host 8B-parameter quantised models, and its Ethernet I/O permits forming small clusters. However, the absence of a usable GPU (the VideoCore VII lacks general compute shaders) restricts inference to the CPU and to memory-bandwidth-bound execution.
+
+\paragraph{Investigation timeline at a glance.}
+Three intermingled tracks unfolded over the course of the investigation: (i)~architectural exploration (which framework, which model, which quantisation) that converged on \texttt{distributed-llama} + Qwen3-30B-A3B Q40 and established the operational baseline of 11.40~tok/s; (ii)~production-branch source-level work (Stages~1--8, 7.18 $\to$ 13.720~tok/s, primarily the model switch in Stage~4 from Llama~3.1~8B to Qwen3-MoE for $+$59\%, plus the F0/F1/F2 \texttt{distributed-llama} patches); and (iii)~the bit-exact refinement work documented in detail in this manuscript (Stages~9--15, 13.720 $\to$ 14.449~tok/s, $+$5.31\% over the production baseline of the pre-investigation production branch, $+$26.75\% over the original Qwen3 measurement, and $+$10.81\% over the publicly documented ceiling of 13.04~tok/s set by Tadych~\cite{dllama_discussion255} on the same model and hardware class). Five hard constraints were progressively discovered and adopted as design rules during the investigation: \emph{bit-exact output preservation} (SHA-256 of the first 100 generated token-ids must match a fixed pre-stage reference at \texttt{seed=42}, \texttt{temperature=0}); \emph{no kernel rebuild} (Pi OS stock kernel 6.12.75); \emph{no model change} (Qwen3-30B-A3B Q40 is fixed); \emph{no CPU overclock} (silicon stays at nominal 2.4~GHz); and \emph{no reduction in model quality} (top-$k$ unchanged at 8, no Q3 down-quantisation, no expert pruning). These constraints rule out most of the speedup techniques in the recent literature \cite{li2025prima,halo2026} but make the surviving optimisations production-deployable without quality regression risk.
 
 \textbf{Contributions of this report.}
 \begin{enumerate}[leftmargin=*,nosep]

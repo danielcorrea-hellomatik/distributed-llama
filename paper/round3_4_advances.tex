@@ -1,82 +1,84 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,a4paper]{article}
 
+% Typography — OpenAI / Anthropic / NeurIPS-style technical-report style
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-\usepackage[margin=2.2cm]{geometry}
-\usepackage{xcolor}
+% Note: mathptmx / helvet / courier not in this minimal TeX install;
+% Computer Modern + microtype protrusion provides a clean academic look.
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[margin=2.5cm,top=2.2cm,bottom=2.5cm]{geometry}
+
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{booktabs}
-\usepackage{siunitx}
-\usepackage{enumitem}
-\usepackage{fancyhdr}
-\usepackage{titlesec}
-\usepackage[colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!50!black,citecolor=red!60!black]{hyperref}
-\usepackage{tcolorbox}
-\tcbuselibrary{skins,breakable}
-\usepackage{titling}
-\usepackage{float}
-\usepackage{caption}
-\usepackage{listings}
+\usepackage{tabularx}
 \usepackage{multirow}
+\usepackage{float}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=3pt}
 
-\definecolor{primary}{RGB}{30,80,140}
-\definecolor{accent}{RGB}{200,80,40}
-\definecolor{ok}{RGB}{40,140,60}
-\definecolor{warn}{RGB}{200,140,30}
-\definecolor{err}{RGB}{180,40,40}
-\definecolor{codebg}{RGB}{245,245,248}
+\usepackage{xcolor}
+\definecolor{primary}{RGB}{30,30,30}
+\definecolor{accent}{RGB}{160,55,30}
+\definecolor{codebg}{RGB}{248,248,248}
 
+\usepackage[font=small,labelfont=bf,labelsep=period,justification=justified]{caption}
+\usepackage[hidelinks,breaklinks=true,bookmarks=true,unicode=true]{hyperref}
+\usepackage{listings}
 \lstset{
   basicstyle=\ttfamily\footnotesize,
-  backgroundcolor=\color{codebg},
   frame=single,
-  rulecolor=\color{primary!30},
+  framerule=0.3pt,
+  rulecolor=\color{black!40},
   breaklines=true,
   showstringspaces=false,
   language=bash,
-  keywordstyle=\color{primary}\bfseries,
-  commentstyle=\color{ok}\itshape,
-  stringstyle=\color{accent},
+  aboveskip=8pt,
+  belowskip=8pt,
 }
 
-\titleformat{\section}{\Large\bfseries\color{primary}}{\thesection}{1em}{}
-\titleformat{\subsection}{\large\bfseries\color{primary!80}}{\thesubsection}{1em}{}
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
 
-\pagestyle{fancy}
-\fancyhf{}
-\fancyhead[L]{\small\color{primary}Pushing the Pi5 cluster --- empirical ceiling investigation}
-\fancyhead[R]{\small\thepage}
-\fancyfoot[C]{\small\color{gray}Technical Note --- May 2026}
-\renewcommand{\headrulewidth}{0.4pt}
-\setlength{\headheight}{14pt}
+\usepackage{titling}
+\pretitle{\begin{center}\Large\bfseries}
+\posttitle{\par\end{center}\vspace{-0.4em}}
+\preauthor{\begin{center}\normalsize}
+\postauthor{\par\end{center}\vspace{-0.4em}}
+\predate{\begin{center}\small\itshape}
+\postdate{\par\end{center}}
 
-\title{
-  \vspace{-1cm}
-  {\Huge\bfseries\color{primary} Pushing the Pi5 Cluster}\\[0.3cm]
-  {\Large An empirical investigation of the bit-exact ceiling}\\[0.4cm]
-  \rule{\textwidth}{1.5pt}\\[0.3cm]
-  {\large Findings from 4 background Linux research agents and $\sim$20 cluster experiments}\\[0.3cm]
-  {\normalsize Companion to ``Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster''}
+\renewenvironment{abstract}{%
+  \vspace{6pt}\begin{center}\normalsize\bfseries Abstract\end{center}%
+  \begin{quote}\noindent\small%
+}{%
+  \end{quote}\vspace{6pt}%
 }
-\author{
-  \textbf{Daniel Correa Villa}\\
+
+\title{Pushing the Raspberry Pi 5 Cluster:\\[0.15cm]
+       An Empirical Investigation of the Bit-Exact Ceiling}
+\author{Daniel Correa Villa\\
   \small Hellomatik --- Raspberry Pi Cluster Lab\\
-  \small \texttt{}
-}
-\date{17 May 2026}
+  \small \texttt{}\\[2pt]
+  \small \emph{Companion to ``Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster''}}
+\date{18 May 2026}
 
 \begin{document}
 
 \maketitle
 \thispagestyle{empty}
 
-\begin{tcolorbox}[colback=primary!5,colframe=primary!50,title=\textbf{Abstract}]
+\begin{abstract}
 This companion paper documents a multi-round investigation of the Raspberry Pi 5 cluster ($4\times$Pi 5 16 GB, Cortex-A76, Gigabit Ethernet) running \texttt{distributed-llama} on Qwen3-30B-A3B Q40. Building on the original report's 12.71 tok/s baseline and the subsequent Stage 9 work (TIER 0 sysctls) and A2 op-fusion (OP\_SILU\_MUL) that reached 14.011 tok/s, we conducted Rounds 3 and 4 of experiments: four parallel background research agents examined Linux Plumbers, SOSP, OSDI, EuroSys, eBPF, scheduler, and ARM-specific papers (2024--2026); we cherry-picked the Phase B async-sync foundation; implemented EEVDF per-task slice tuning via \texttt{sched\_setattr}; applied multiple sysctl bundles; and tested $\sim$15 distinct configurations including threaded NAPI, IRQ pinning, per-thread CPU affinity, and \texttt{--tile-sync} K-values. \textbf{Net measured improvement Rounds 3+4: 0\% within noise} (Stage 11 sub-total = 14.046 tok/s).
 
 A subsequent rigorous-bench session in May 2026 (\textbf{Stages 12--15}) added four further cumulative bit-exact commits to the production branch, all validated by SHA-256-hashing 100 deterministic tokens against the Stage 11 reference: \texttt{64ef787} removed counter-productive software prefetch from the matmul Q80$\times$Q40 NEON kernel (HW prefetcher of the Cortex-A76 outperforms the manual hints); \texttt{1af175c} rewrote \texttt{silu\_mul\_F32} as a true single-pass NEON kernel ($-$33\% memory ops); \texttt{f8ed9d2} bumped \texttt{MAX\_CHUNK\_SIZE} from 4 KB to 16 KB in the all-reduce loop ($-$4$\times$ \texttt{send()}/\texttt{recv()} syscalls); \texttt{edbc4ce} persisted the runtime NIC tweaks (RX ring 4096, RFS, NAPI defer) via a new \texttt{systemd} unit.
 
-The final cluster sustains \textbf{14.449 $\pm$ 0.038 tok/s (n=20, paired, cold-start; best individual run 14.557)}, a cumulative improvement of \textbf{+5.31\% over the Stage 8 baseline} of 13.720 tok/s and \textbf{+10.81\% above the publicly documented ceiling of 13.04 tok/s} for this model and hardware class. The 49\% backend stall rate (measured via ARM PMU \texttt{stalled-cycles-backend}) confirms the cluster remains DRAM-bandwidth-bound. Further bit-exact gains require either (a)~a dedicated Async Tensor Parallelism sprint with 60-minute soak test ($\sim$250 LOC on top of the in-repo Phase B foundation; estimated $+$5--12\%), (b)~quality compromises (Q3 quantisation, top-$k$=4, expert pruning --- explicitly out of scope of this work), or (c)~hardware upgrade.
-\end{tcolorbox}
+The final cluster sustains \textbf{14.449 $\pm$ 0.038 tok/s} ($n$=20, paired, cold-start; best individual run 14.557), a cumulative improvement of \textbf{+26.75\%} over the original Qwen3-MoE measurement of 11.40~tok/s (Stage~4, first running of the chosen model on this cluster), \textbf{+5.31\%} over the Stage~8 baseline of 13.720~tok/s, and \textbf{+10.81\%} above the publicly documented ceiling of 13.04~tok/s for this model and hardware class. The 49\% backend stall rate (measured via ARM PMU \texttt{stalled-cycles-backend}) confirms the cluster remains DRAM-bandwidth-bound. Further bit-exact gains require either (a)~a dedicated Async Tensor Parallelism sprint with 60-minute soak test ($\sim$250~LOC on top of the in-repo Phase~B foundation; estimated $+$5--12\%), (b)~quality compromises (Q3 quantisation, top-$k$=4, expert pruning --- explicitly out of scope of this work), or (c)~hardware upgrade.
+\end{abstract}
 
 \section{Background}
 
