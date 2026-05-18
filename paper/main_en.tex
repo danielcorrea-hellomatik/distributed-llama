@@ -334,24 +334,27 @@ Prefill rate degrades slightly with prompt size (KV-cache growth and attention $
   ybar,
   bar width=22pt,
   ylabel={\textbf{tokens / second}},
-  symbolic x coords={Baseline,{OS tuning},{8 patches},{Cleanup+mlock},{MoE switch},{Final}},
+  symbolic x coords={Baseline,{OS tuning},{8 patches},{Cleanup+mlock},{MoE switch},{S6 max-seq},{S9 TIER0},{S10 fusion},{S11 R3/4},{S14 chunk},{S15 final}},
   xtick=data,
-  x tick label style={rotate=25,anchor=east,font=\small},
-  ymin=0,ymax=14,
+  ymin=0,ymax=16,
   ymajorgrids,
   grid style={dashed,gray!30},
   nodes near coords,
-  nodes near coords style={font=\bfseries\small,color=primary!80},
+  nodes near coords style={font=\bfseries\scriptsize,color=primary!80,rotate=70,anchor=west},
   every node near coord/.append style={yshift=2pt},
-  enlarge x limits=0.12,
+  enlarge x limits=0.08,
   axis line style={primary!60},
+  x tick label style={rotate=35,anchor=east,font=\scriptsize},
+  width=15cm,height=7cm,
 ]
 \addplot[fill=primary!30,draw=primary,thick] coordinates {
-  (Baseline,5.7) ({OS tuning},6.85) ({8 patches},7.18) ({Cleanup+mlock},7.01) ({MoE switch},11.4) (Final,12.71)
+  (Baseline,5.7) ({OS tuning},6.85) ({8 patches},7.18) ({Cleanup+mlock},7.01) ({MoE switch},11.4) ({S6 max-seq},12.71) ({S9 TIER0},14.011) ({S10 fusion},14.081) ({S11 R3/4},14.046) ({S14 chunk},14.449) ({S15 final},14.449)
 };
+\draw[red,dashed,thick] (axis cs:Baseline,13.04) -- (axis cs:{S15 final},13.04);
+\node[red,font=\scriptsize] at (axis cs:{S9 TIER0},13.4) {public ceiling 13.04};
 \end{axis}
 \end{tikzpicture}
-\caption{Throughput evolution along the optimisation sequence. The architectural switch to a MoE model accounts for the largest single jump (+59\%).}
+\caption{Throughput evolution across the full optimisation sequence (11 measured stages, $n$=20 each). The architectural switch to a MoE model accounts for the largest single jump ($+$59\%); Stage~9 (kernel network tuning) breaks decisively above the publicly documented ceiling of 13.04 tok/s (dashed red line); Stage~14 (\texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB) is the largest single source-level win of the 2026-05-18 investigation. The final sustained throughput is 14.449 tok/s ($+$10.81\% over the public ceiling, $+$154\% over the unoptimised Llama-3.1-8B dense baseline).}
 \end{figure}
 
 \subsection{Memory and thermal behaviour}
@@ -444,11 +447,11 @@ EXO inherits MLX's requirement of Metal, Neural Engine, and UMA. ``ARM'' is nece
 \section{Discussion}
 
 \subsection{Bottleneck analysis}
-The dominant bottleneck for this class of workload is the memory bandwidth of the Pi 5 LPDDR4X subsystem (17 GB/s). For a dense 8B Q40 model with $\sim$5 GB active weights per token, the theoretical 4-node maximum is
+The dominant bottleneck for this class of workload is the memory bandwidth of the Pi 5 LPDDR4X subsystem (vendor-spec ceiling 17 GB/s; ARM PMU at Stage~12 measured 11.4 GB/s sustained per node, $\sim$67\% of the theoretical maximum, see \S\ref{sec:stage9}). For a dense 8B Q40 model with $\sim$5 GB active weights per token, the theoretical 4-node maximum is
 \[
 \frac{17~\text{GB/s}}{5~\text{GB/token}} \times 4 \approx 13.6~\text{tok/s},
 \]
-of which 51\% (7 tok/s) is realised --- the remainder is consumed by tensor-parallel synchronisation. For Qwen3-30B-A3B with $\sim$3 GB of active weights, the theoretical maximum is $\sim$22.6 tok/s, and the realised 12.71 tok/s represents 56\% utilisation.
+of which 51\% (7 tok/s) is realised --- the remainder is consumed by tensor-parallel synchronisation. For Qwen3-30B-A3B with $\sim$3 GB of active weights, the theoretical maximum is $\sim$22.6 tok/s. At Stage~6 (12.71 tok/s) we realised 56\% of this maximum; \textbf{at Stage~15 (14.449 tok/s) we realise 64\%}. The remaining $\sim$36\% gap is dominated by all-reduce barrier overhead (measured at 17.7\% of per-token wall time in Stage~12 PMU profiling), which the unwired \emph{Async Tensor Parallelism} foundation in the repository (Section~\ref{sec:future-work-halo}) is designed to attack.
 
 \begin{figure}[H]
 \centering
@@ -484,7 +487,7 @@ The user's intuition --- ``can we read only what's needed instead of all the wei
 \toprule
 \textbf{Setup} & \textbf{tok/s (Llama 8B class)} & \textbf{Cost (approx.)} \\
 \midrule
-4$\times$ Pi 5 16GB + \texttt{dllama} MoE \textbf{(this work)} & \textbf{12.71} & $\sim$500 \euro \\
+4$\times$ Pi 5 16GB + \texttt{dllama} MoE \textbf{(this work, Stage~15)} & \textbf{14.449} & $\sim$500 \euro \\
 1$\times$ Mac Mini M4 8GB + MLX & 25 & 599 USD \\
 1$\times$ NVIDIA Jetson Orin Nano Super & 21.75 & 249 USD \\
 1$\times$ desktop + RTX 3060 12GB & $\sim$40 & $\sim$700 \euro \\
