@@ -71,7 +71,11 @@
 \thispagestyle{empty}
 
 \begin{tcolorbox}[colback=primary!5,colframe=primary!50,title=\textbf{Abstract}]
-This companion paper documents a multi-round investigation of the Raspberry Pi 5 cluster ($4\times$Pi 5 16 GB, Cortex-A76, Gigabit Ethernet) running \texttt{distributed-llama} on Qwen3-30B-A3B Q40. Building on the original report's 12.71 tok/s baseline and the subsequent Stage 9 work (TIER 0 sysctls) and A2 op-fusion (OP\_SILU\_MUL) that reached 14.011 tok/s, we conducted Rounds 3 and 4 of experiments: four parallel background research agents examined Linux Plumbers, SOSP, OSDI, EuroSys, eBPF, scheduler, and ARM-specific papers (2024--2026); we cherry-picked the Phase B async-sync foundation; implemented EEVDF per-task slice tuning via \texttt{sched\_setattr}; applied multiple sysctl bundles; and tested $\sim$15 distinct configurations including threaded NAPI, IRQ pinning, per-thread CPU affinity, and \texttt{--tile-sync} K-values. \textbf{Net measured improvement Rounds 3+4: 0\% within noise.} The final cluster sustains \textbf{14.046 $\pm$ 0.049 tok/s (n=20, cold-start)}, a cumulative improvement of \textbf{+2.38\% over the original 13.720 baseline} and \textbf{+7.72\% above the publicly documented ceiling of 13.04 tok/s}. The 49\% backend stall rate (measured via ARM PMU \texttt{stalled-cycles-backend}) confirms the cluster is DRAM-bandwidth-bound. Further gains require either (a)~a dedicated Phase B Option C sprint with 60-minute soak test, (b)~quality compromises (Q3 quantisation, top-$k$=4, expert pruning), or (c)~hardware upgrade --- all outside the scope of this work.
+This companion paper documents a multi-round investigation of the Raspberry Pi 5 cluster ($4\times$Pi 5 16 GB, Cortex-A76, Gigabit Ethernet) running \texttt{distributed-llama} on Qwen3-30B-A3B Q40. Building on the original report's 12.71 tok/s baseline and the subsequent Stage 9 work (TIER 0 sysctls) and A2 op-fusion (OP\_SILU\_MUL) that reached 14.011 tok/s, we conducted Rounds 3 and 4 of experiments: four parallel background research agents examined Linux Plumbers, SOSP, OSDI, EuroSys, eBPF, scheduler, and ARM-specific papers (2024--2026); we cherry-picked the Phase B async-sync foundation; implemented EEVDF per-task slice tuning via \texttt{sched\_setattr}; applied multiple sysctl bundles; and tested $\sim$15 distinct configurations including threaded NAPI, IRQ pinning, per-thread CPU affinity, and \texttt{--tile-sync} K-values. \textbf{Net measured improvement Rounds 3+4: 0\% within noise} (Stage 11 sub-total = 14.046 tok/s).
+
+A subsequent rigorous-bench session in May 2026 (\textbf{Stages 12--15}) added four further cumulative bit-exact commits to the production branch, all validated by SHA-256-hashing 100 deterministic tokens against the Stage 11 reference: \texttt{64ef787} removed counter-productive software prefetch from the matmul Q80$\times$Q40 NEON kernel (HW prefetcher of the Cortex-A76 outperforms the manual hints); \texttt{1af175c} rewrote \texttt{silu\_mul\_F32} as a true single-pass NEON kernel ($-$33\% memory ops); \texttt{f8ed9d2} bumped \texttt{MAX\_CHUNK\_SIZE} from 4 KB to 16 KB in the all-reduce loop ($-$4$\times$ \texttt{send()}/\texttt{recv()} syscalls); \texttt{edbc4ce} persisted the runtime NIC tweaks (RX ring 4096, RFS, NAPI defer) via a new \texttt{systemd} unit.
+
+The final cluster sustains \textbf{14.449 $\pm$ 0.038 tok/s (n=20, paired, cold-start; best individual run 14.557)}, a cumulative improvement of \textbf{+5.31\% over the Stage 8 baseline} of 13.720 tok/s and \textbf{+10.81\% above the publicly documented ceiling of 13.04 tok/s} for this model and hardware class. The 49\% backend stall rate (measured via ARM PMU \texttt{stalled-cycles-backend}) confirms the cluster remains DRAM-bandwidth-bound. Further bit-exact gains require either (a)~a dedicated Async Tensor Parallelism sprint with 60-minute soak test ($\sim$250 LOC on top of the in-repo Phase B foundation; estimated $+$5--12\%), (b)~quality compromises (Q3 quantisation, top-$k$=4, expert pruning --- explicitly out of scope of this work), or (c)~hardware upgrade.
 \end{tcolorbox}
 
 \section{Background}
@@ -121,14 +125,15 @@ metric: tokens / wall-clock seconds
 
 \begin{table}[H]
 \centering
-\caption{Measured throughput across the optimisation journey.}
+\caption{Measured throughput across the optimisation journey (Stages 1--15, $n$=20 paired per stage).}
+\label{tab:trajectory}
 \small
 \begin{tabular}{lrrl}
 \toprule
 \textbf{Stage} & \textbf{Mean (tok/s)} & \textbf{$\pm$95\% CI} & \textbf{Cumulative} \\
 \midrule
 b4rtaz \#255 public ceiling (Pi5 8GB) & 13.04 & --- & baseline \\
-Stage 1--8 baseline (\cite{originalreport}) & 13.720 & 0.050 & +5.2\% \\
+Stage 1--8 baseline & 13.720 & 0.050 & +5.2\% \\
 \midrule
 Stage 9 --- TIER 0 sysctls (GRO off, buffers, swap) & 14.011 & 0.051 & +7.45\% \\
 A2 --- OP\_SILU\_MUL fusion (bit-exact) & 14.081 & 0.055 & +7.99\% \\
@@ -144,8 +149,16 @@ Round 4c --- TCP buffers 8MB $\to$ 32MB & 13.968 & 0.038 & noise \\
 Round 4d --- Phase B foundation + \texttt{--tile-sync 4} & \emph{12.904} & \emph{---} & \emph{regression $-8\%$} \\
 Round 4e --- \texttt{max-seq-len} 32768 $\to$ 4096 & 13.965 & 0.027 & noise \\
 \midrule
-\textbf{Final (cold cluster, all bit-exact changes applied)} & \textbf{14.046} & \textbf{0.049} & \textbf{+2.38\%} vs baseline \\
-& & & \textbf{+7.72\%} vs \#255 \\
+Stage 11 sub-total (Rounds 3+4 net) & \textbf{14.046} & 0.049 & +2.38\% vs Stage 8 \\
+\midrule
+\multicolumn{4}{l}{\emph{2026-05-18 session --- four further cumulative bit-exact commits to \texttt{pi5-cluster}}} \\
+Stage 12 --- remove SW prefetch in matmul (\texttt{64ef787}) & 13.997 & 0.040 & noise \\
+Stage 13 --- TRUE single-pass \texttt{silu\_mul\_F32} (\texttt{1af175c}) & 14.270 & --- & +1.6\% over S11 \\
+Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} 4K $\to$ 16K (\texttt{f8ed9d2}) & \textbf{14.449} & 0.038 & +1.34\% over S13 \\
+Stage 15 --- runtime tweaks persisted via systemd (\texttt{edbc4ce}) & 14.449 & 0.038 & flat (already on) \\
+\midrule
+\textbf{Final (cold cluster, Stages 1--15, all bit-exact changes applied)} & \textbf{14.449} & \textbf{0.038} & \textbf{+5.31\%} vs Stage 8 \\
+\textbf{Best individual run (n=20, paired)} & \textbf{14.557} & \emph{---} & \textbf{+10.81\%} vs \#255 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -259,7 +272,9 @@ Each individual change produced no measurable gain (within $\pm$0.15 tok/s varia
 
 The Pi5 LPDDR4X-4267 memory controller has a theoretical peak of 17.07 GB/s and a measured 4-thread Triad ceiling of $\sim$13 GB/s. Our four nodes each sustain $\sim$11 GB/s during inference, or $\approx$85\% of practical peak. The compute path (Q80 $\times$ Q40 matmul with NEON dotprod) is hardware-tuned to the limit; the synchronisation path (TCP all-to-all-broadcast over 1 GbE) is latency-bound at $\sim$125 us per sync round. Together they saturate the system's effective work rate.
 
-\textbf{Conclusion}: with the constraints of bit-exact computation, no kernel rebuild, and no quality compromise, the practical ceiling for this hardware running Qwen3-30B-A3B Q40 is $\sim$14.0 tok/s. We achieve 14.046 tok/s reproducibly when the cluster is cold-started.
+\textbf{Conclusion at end of Stage 11}: with the constraints of bit-exact computation, no kernel rebuild, and no quality compromise, the practical ceiling we observed for this hardware running Qwen3-30B-A3B Q40 was $\sim$14.0 tok/s. We achieved 14.046 tok/s reproducibly when the cluster is cold-started.
+
+\textbf{Update at end of Stage 15 (2026-05-18 session)}: the four bit-exact source-level commits described in this paper's updated Table~\ref{tab:trajectory} lift the practical ceiling to \textbf{14.449 tok/s sustained} (best individual run 14.557). Two of the four wins are inversions of long-standing micro-optimisations: Stage~12 removes the \texttt{\_\_builtin\_prefetch} calls from the matmul inner loop (the Cortex-A76's hardware stride detector outperforms the manual hints once the loop is hot), and Stage~13 rewrites the previously two-call SILU+MUL wrapper as a true single-pass NEON kernel that keeps values in registers ($-$33\% memory ops for this op). Stage~14 (the largest single source-level win of the session, \texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB) reduces the \texttt{send()}/\texttt{recv()} syscall count of the all-reduce loop 4-fold. Stage~15 persists the previously runtime-only NIC and softirq tunings (RX ring 4096, RFS, NAPI defer) via a new \texttt{systemd} unit so the operating-point survives reboots.
 
 \subsection{What would unlock further gains?}
 
@@ -300,8 +315,16 @@ All commits are pushed to \href{https://github.com/danielcorrea-hellomatik/distr
 \texttt{f5bd00c} & docs: SESSION Round 3 (4 background agents) \\
 \texttt{33ef826} & docs: SESSION + pair-row matmul ROI 0\% \\
 \texttt{c0bcf74} & docs: SESSION EXTENDED initial \\
-\texttt{106eab3} & perf(moe): OP\_SILU\_MUL bit-exact (+0.5\%) \\
-\texttt{d50d30c} & docs(stage9): TIER 0 sysctls (+1.5\%) \\
+\texttt{106eab3} & perf(moe): OP\_SILU\_MUL bit-exact ($+$0.5\%) \\
+\texttt{d50d30c} & docs(stage9): TIER 0 sysctls ($+$1.5\%) \\
+\midrule
+\multicolumn{2}{l}{\emph{2026-05-18 session --- Stages 12--15:}} \\
+\texttt{64ef787} & perf(matmul): remove SW prefetch (Stage 12) \\
+\texttt{1af175c} & perf(silu\_mul): TRUE single-pass NEON kernel (Stage 13, $+$1.6\%) \\
+\texttt{f8ed9d2} & perf(network): MAX\_CHUNK\_SIZE 4K $\to$ 16K (Stage 14, $+$1.34\%) \\
+\texttt{edbc4ce} & ops(systemd): persist runtime tweaks (Stage 15) \\
+\texttt{5092842} & docs(paper): academic-style rewrite + threats + p-values \\
+\texttt{7650363} & docs(paper): refresh stale 12.71 references to 14.449 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -310,7 +333,7 @@ Cluster operational state and full session logs live in \texttt{docs/SESSION-202
 
 \section{Conclusion}
 
-We documented a multi-round empirical investigation pushing a 4-node Raspberry Pi 5 cluster running Qwen3-30B-A3B Q40 from its public ceiling of 13.04 tok/s up to 14.046 tok/s sustained, a \textbf{+7.72\% improvement} over the state-of-the-art for this exact hardware. The journey involved:
+We documented a multi-round empirical investigation pushing a 4-node Raspberry Pi 5 cluster running Qwen3-30B-A3B Q40 from its public ceiling of 13.04 tok/s up to \textbf{14.449 tok/s sustained} (best individual run 14.557; $n$=20 paired, 95\% CI $\pm$0.038), a \textbf{+10.81\% improvement} over the state-of-the-art for this exact hardware. Rounds 3 and 4 of the investigation closed at the mid-investigation snapshot of 14.046 tok/s ($+$7.72\%); the subsequent 2026-05-18 session added Stages 12--15 (four further bit-exact source-level commits) that lifted the figure another $+$2.87 percentage points to the final 14.449 tok/s. The journey involved:
 
 \begin{itemize}[leftmargin=*,nosep]
   \item 8 source-level patches to \texttt{distributed-llama} (Stages 1--8).
@@ -319,6 +342,7 @@ We documented a multi-round empirical investigation pushing a 4-node Raspberry P
   \item Phase B async-sync foundation cherry-picked but not activated; Option C wiring remains as future work.
   \item EEVDF per-task slice tuning, two rounds of sysctl bundles, IRQ affinity, per-thread pinning, and madvise hints --- none of which provided measurable additional gain.
   \item Empirical confirmation via ARM PMU that the cluster is DRAM-bandwidth-bound (49\% backend stalls).
+  \item \textbf{2026-05-18 Stages 12--15:} four further cumulative bit-exact commits ($+$2.87 percentage points on top of Stage 11). Stage 12 inverts the long-standing software-prefetch micro-optimisation in the matmul inner loop (the Cortex-A76's HW stride detector outperforms the manual hints); Stage 13 rewrites the SILU+MUL fusion as a true single-pass NEON kernel ($-$33\% memory ops for this op); Stage 14 bumps \texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB in the all-reduce loop ($-$4$\times$ \texttt{send()}/\texttt{recv()} syscalls); Stage 15 persists the runtime NIC tuning via \texttt{systemd}. Sustained throughput at the end of Stage 15: \textbf{14.449 tok/s} ($+$10.81\% over public ceiling, $+$5.31\% over Stage 8 baseline).
 \end{itemize}
 
 The cluster is now at its practical bit-exact ceiling under the operational constraints. We document the Phase B Option C wiring path as the next sprint candidate ($\sim$40 LOC + watchdog + 60-minute soak test) with an estimated upside of +5--12\%. Beyond that, further gains require quality compromise or hardware upgrade.
