@@ -12,6 +12,10 @@
 \usepackage[protrusion=true,expansion=false]{microtype}
 \usepackage[margin=2.5cm,top=2.2cm,bottom=2.5cm]{geometry}
 
+% Relax line-breaking to reduce overfull \hbox from long \texttt{...}
+% identifiers that LaTeX cannot hyphenate.
+\sloppy
+
 % Math + symbols
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{siunitx}
@@ -135,7 +139,31 @@ The state of the art for distributed CPU LLM inference is divided between three 
   \item \textbf{Mixture-of-Experts (MoE)} models~\cite{jiang2024,qwen3}: a parameter-efficient architecture that activates a sparse subset of weights per token. Reduces effective bandwidth proportionally to the top-$k$ expert fraction.
 \end{itemize}
 
-Comparable Pi 5 clusters in the literature: Tadych~\cite{tadych2024,dllama_discussion255} reports 13.04 tok/s on 4$\times$Pi 5 8GB with Qwen3-30B-A3B; the Seeed Studio documentation~\cite{seeed2025} reports 6.06 tok/s with DeepSeek-R1-Distill-Llama-8B on the same hardware. The Stratosphere Laboratory~\cite{stratosphere2025} provides single-node Pi 5 baselines.
+Comparable Pi~5 clusters in the literature: Tadych~\cite{tadych2024,dllama_discussion255} reports 13.04~tok/s on 4$\times$Pi~5 8GB with Qwen3-30B-A3B; the Seeed Studio documentation~\cite{seeed2025} reports 6.06~tok/s with DeepSeek-R1-Distill-Llama-8B on the same hardware. The Stratosphere Laboratory~\cite{stratosphere2025} provides single-node Pi 5 baselines. Table~\ref{tab:related-work} positions this work against the most directly comparable published systems.
+
+\begin{table}[H]
+\centering
+\caption{Positioning of this work against the most directly comparable published distributed-inference systems for the same model class (Qwen3-30B-A3B Q40 or equivalent MoE) on Pi~5-class hardware. Throughput figures are as reported by each source on its own hardware; the right column gives the closest comparison that can be made against \emph{our} hardware (4$\times$Pi~5 16~GB cluster) when the published source benchmarked on different hardware.}
+\label{tab:related-work}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{3.0cm}p{3.4cm}rp{2.4cm}p{3.0cm}}
+\toprule
+\textbf{System} & \textbf{Framework / approach} & \textbf{tok/s} & \textbf{Quality preservation} & \textbf{Notes} \\
+\midrule
+\textbf{This work} (Stages 1--15) & \texttt{distributed-llama} + 12 patches + kernel/NIC tuning & \textbf{14.449} & bit-exact (SHA-256) & 4$\times$Pi~5 16~GB, this paper; +10.81\% vs Tadych ceiling \\
+\midrule
+Tadych \#255 \cite{dllama_discussion255} & \texttt{distributed-llama} v0.16, default & 13.04 & bit-exact & 4$\times$Pi~5 8~GB, vanilla upstream \\
+Seeed Studio \cite{seeed2025} & \texttt{distributed-llama} & 6.06 & bit-exact & 4$\times$Pi~5 8~GB, DeepSeek-R1-Distill-Llama-8B \\
+ByteShape \cite{byteshape2026} & \texttt{llama.cpp}, single node & 8.03 & bit-exact & 1$\times$Pi~5 16~GB, Q3\_K\_S 2.70 bpw \\
+Geerling \cite{geerling_aibench47} & \texttt{llama.cpp}, single node & 7.99 & bit-exact & 1$\times$Pi~5 16~GB, comparable quant \\
+Geerling RPC \cite{geerling2025} & \texttt{llama.cpp} RPC distributed & --- & bit-exact & Reported 25$\times$ regression vs.\ single-node on Pi clusters \\
+\texttt{prima.cpp} \cite{li2025prima} & pipelined ring + mmap & --- (n/a Pi~5) & bit-exact & ZMQ topology fails to bootstrap on Pi~5 in our testing \\
+HALO \cite{halo2026} & \texttt{distributed-llama} + 3{,}500 LOC overlap & 1.30$\times$ over baseline on reliable LAN & bit-exact & Source not yet public; if released, would project our cluster to $\sim$16.5 tok/s \\
+EXO \cite{exo2025} & MLX backend & --- (n/a Pi~5) & --- & Requires Apple MLX; not buildable on ARM Linux \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~\cite{mlperf2025}, the vLLM benchmarking guide~\cite{kwon2023vllm}, and the disaggregated prefill/decode reporting introduced by DistServe~\cite{zhong2024distserve}.
 
@@ -570,18 +598,9 @@ For applications prioritising Hermes Agent compatibility, two candidates stand o
   \item \textbf{OLMoE-1B-7B}~\cite{muennighoff2024olmoe}: smaller MoE (7B total / 1B active), projected to reach $\sim$19.6 tok/s on this hardware. Tool-calling accuracy untested.
 \end{itemize}
 
-\section{Mid-investigation summary at Stage 6 (12.71~tok/s)}
-\label{sec:mid-summary}
-
-\textit{The text in this section is preserved from the snapshot of the cluster after Stages 1--6 (sustained throughput 12.71~tok/s). It captures the analytical conclusions that were valid at that intermediate point in the optimisation trajectory. Subsequent Stages 7 through 15 (Section~\ref{sec:stage9} onwards) extend the throughput to 14.449~tok/s and refine several of the claims here in light of additional measurements; the current final conclusion is in Section~\ref{sec:final-conclusion}.}
-
-A four-node Raspberry Pi~5 cluster can serve a 30~B-parameter MoE language model at \textbf{12.71~tok/s} (95\% CI $\pm$0.029, $n$=20) with a 557~ms TTFT, after applying eight source-level fixes to the chosen framework, switching to a sparse-activation model architecture, and tuning the operating system. The bottleneck is the platform's memory bandwidth (17~GB/s LPDDR4X vendor spec; subsequently measured by ARM PMU at 11.4~GB/s sustained per node in Stage~12 profiling, i.e.\ $\sim$67\% of the ceiling, with the remaining $\sim$33\% gap dominated by all-reduce barrier overhead). The system delivers approximately half the throughput of a single Mac Mini M4 at comparable cost; its value lies in fully on-premise inference with no per-token cost and substantial idle headroom for further workloads.
-
-The most consequential lesson, in our view, is that ``ARM'' is not a hardware category: Apple Silicon, Cortex-A76 SBCs, and server-class Neoverse cores are three different platforms with $\sim$30$\times$ bandwidth spread, $\sim$30$\times$ feature-set spread (no I8MM, no FP16 GEMM, no SVE on A76), and entirely different software ecosystems. Frameworks ostensibly written for ``ARM Linux'' may implicitly require GPU compute (EXO/MLX), hardware-specific synchronisation features (prima.cpp/ZMQ), or ISA extensions (I8MM/SVE/SME absent from Cortex-A76), and these distinctions only surface at runtime.
-
-\paragraph{Statistical significance of the Stages 8--15 trajectory.}
+\section{Statistical significance of the Stages 8--15 trajectory}
 \label{sec:significance}
-Approximate Welch's $t$-tests on the consecutive-stage means (computing $t = (\bar{x}_2 - \bar{x}_1) / \sqrt{s_1^2 + s_2^2}/\sqrt{n}$ with $n=20$, $\text{df}=19$, two-tailed):
+We report approximate two-sample Welch's $t$-tests on the consecutive-stage means, computed as $t = (\bar{x}_2 - \bar{x}_1) / \sqrt{s_1^2/n + s_2^2/n}$ with $n=20$, df$\approx 19$, two-tailed. All within-cluster consecutive-stage improvements are statistically significant at $p < 0.05$; the cumulative Stage 8 $\to$ Stage 15 improvement is significant at $p \ll 0.001$. The b4rtaz \#255 comparison cannot be paired (different hardware site, 8~GB SKU vs.\ our 16~GB SKU) and is reported as a face-value reference, with the caveat detailed in the Threats to Validity section (\S\ref{sec:threats}).
 
 \begin{table}[H]
 \centering
@@ -602,8 +621,6 @@ b4rtaz \#255 $\to$ Stage 15 & 13.04   & 14.449      & $+$1.409       & ---    & 
 \end{tabular}
 \end{table}
 
-All within-cluster consecutive-stage improvements are statistically significant at $p < 0.05$; the Stage 8 to Stage 15 cumulative improvement is significant at $p \ll 0.001$. The b4rtaz \#255 comparison cannot be paired (different hardware site, different 8~GB SKU vs.\ our 16~GB SKU); we report it as a face-value comparison against a third-party reference, with the caveat discussed in Section~\ref{sec:threats}.
-
 \section*{Appendix A. Reproducibility}
 
 The exact benchmark protocol is encoded in two scripts versioned in the repository at \texttt{deploy/scripts/}:
@@ -621,6 +638,14 @@ Each invokes \texttt{curl} against \texttt{http://localhost:9999/v1/chat/complet
 
 The full stage-to-commit mapping with SHA-256 of model and tokenizer artefacts is in \texttt{docs/COMMIT-HASHES.md}. The full handoff document for the next investigation session, including the deferred TIER~A deliverables (\texttt{lm-eval-harness} quality evaluation, wall-plug energy measurement) and TIER~B/C polish items, is in \texttt{docs/PAPER-PUBLICATION-PLAN.md}.
 
+\section*{Appendix B. Historical snapshot at Stage 6 (12.71~tok/s)}
+\label{sec:mid-summary}
+
+\textit{This appendix preserves the analytical conclusions that were valid at the Stages 1--6 intermediate snapshot of the cluster (sustained throughput 12.71~tok/s, $n$=20, 95\% CI $\pm$0.029, 557~ms TTFT). Stages 7--15 (Section~\ref{sec:stage9} onwards) extend the throughput to 14.449~tok/s and refine several of these claims in light of additional measurements; the current final conclusion is in Section~\ref{sec:final-conclusion}.}
+
+After Stages 1--6 the cluster served a 30~B-parameter MoE language model at \textbf{12.71~tok/s} after applying eight source-level fixes to the chosen framework, switching to a sparse-activation model architecture, and tuning the operating system. We identified the platform's memory bandwidth (17~GB/s LPDDR4X vendor spec) as the bottleneck. ARM PMU profiling at Stage~12 subsequently refined this to 11.4~GB/s sustained per node ($\sim$67\% of the theoretical ceiling, with the remaining $\sim$33\% gap dominated by all-reduce barrier overhead). At Stage~6 the system delivered approximately half the throughput of a single Mac Mini~M4 at comparable cost; its value lay in fully on-premise inference with no per-token cost and substantial idle headroom for further workloads.
+
+The most consequential lesson at this intermediate snapshot, in our view, was that ``ARM'' is not a hardware category: Apple Silicon, Cortex-A76 SBCs, and server-class Neoverse cores are three different platforms with $\sim$30$\times$ bandwidth spread, $\sim$30$\times$ feature-set spread (no I8MM, no FP16 GEMM, no SVE on A76), and entirely different software ecosystems. Frameworks ostensibly written for ``ARM Linux'' may implicitly require GPU compute (EXO/MLX), hardware-specific synchronisation features (\texttt{prima.cpp}/ZMQ), or ISA extensions (I8MM/SVE/SME absent from Cortex-A76), and these distinctions only surface at runtime.
 
 \section{Stage 9 --- TIER 0 kernel network and scheduler tuning}
 \label{sec:stage9}
@@ -814,7 +839,41 @@ A subsequent rigorous-bench session in May 2026 added four further cumulative bi
 The NEON+dotprod inner loop carried two \texttt{\_\_builtin\_prefetch} calls (\texttt{w[di*nBlocks + j + 4]} and \texttt{x[j + 4]}). We swept five variants (PLDL2KEEP +16/+4 dual, +8 single, x-only, \texttt{\_\_restrict\_\_} qualified, none) and found that \emph{removing} both prefetches was the only winner ($+1.05\%$ over baseline). The Cortex-A76's hardware prefetcher (stride detect on sequential \texttt{w} access) is more efficient than manual hints, which compete for issue slots in the 4-wide decoder. Stage 12 thus reverses a long-standing micro-optimisation that turns out to be counter-productive on this microarchitecture.
 
 \paragraph{Stage 13 --- True single-pass \texttt{silu\_mul\_F32} fusion (commit \texttt{1af175c}).}
-Stage 10's \texttt{OP\_SILU\_MUL} eliminated the inter-op barrier but the kernel was still a thin 2-call wrapper (\texttt{silu\_F32} then \texttt{mul\_F32}), which kept the intermediate result resident in memory between passes: 3 loads + 2 stores per element. We rewrote it as a single NEON loop that holds values in registers throughout (\texttt{vrecpeq\_f32} + Newton--Raphson + multiply): 2 loads + 1 store per element, a $\sim$33\% reduction in memory ops for this kernel. Measured gain $+1.5\%$ on cluster throughput, bit-exact preserved (identical arithmetic sequence, only the intermediate writeback is removed).
+Stage 10's \texttt{OP\_SILU\_MUL} eliminated the inter-op barrier but the kernel was still a thin 2-call wrapper (\texttt{silu\_F32} then \texttt{mul\_F32}), which kept the intermediate result resident in memory between passes: 3 loads + 2 stores per element. We rewrote it as a single NEON loop that holds values in registers throughout: 2 loads + 1 store per element (Algorithm~\ref{alg:silu-mul-fused}), a $\sim$33\% reduction in memory ops for this kernel. Measured gain $+1.5\%$ on cluster throughput, bit-exact preserved (identical arithmetic sequence, only the intermediate writeback is removed).
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.93\textwidth}
+\vspace{2pt}\hrule\vspace{2pt}
+\noindent\textbf{Algorithm 1.}~Stage 13 single-pass \texttt{silu\_mul\_F32}: bit-exact NEON fusion.
+\vspace{2pt}\hrule\vspace{4pt}
+\footnotesize
+\noindent\textbf{Input:} output buffer $y[0..n-1]$ (in-place), multiplier buffer $m[0..n-1]$, thread index $t$, thread count $T$\\
+\textbf{Output:} $y[i] \leftarrow \mathrm{silu}(y[i]) \cdot m[i]$ for all $i$ in this thread's split\\
+\textbf{Invariant:} arithmetic sequence (\texttt{vrecpeq\_f32}~+~one Newton--Raphson~+~multiply) is byte-identical to the prior two-pass implementation; only the intermediate writeback to \texttt{y[i]} between the two passes is removed.
+\vspace{4pt}
+\begin{tabbing}
+\hspace{1em}\=\hspace{1.5em}\=\hspace{2em}\=\kill
+1: \> $(\textit{start}, \textit{end}) \gets$ \textsc{Split\_Threads}$(n, T, t)$ \\
+2: \> \textbf{for} $i \gets \textit{start}$ \textbf{to} $\textit{end}-4$ \textbf{step} 4 \textbf{do} \> \> \textit{// NEON inner loop, 4 lanes} \\
+3: \> \> $\mathbf{x} \gets$ \texttt{vld1q\_f32}$(y + i)$ \> \textit{// 1 vector load} \\
+4: \> \> $\mathbf{mv} \gets$ \texttt{vld1q\_f32}$(m + i)$ \> \textit{// 1 vector load} \\
+5: \> \> $\mathbf{e} \gets$ \texttt{expf\_neon}$(-\mathbf{x})$ \\
+6: \> \> $\mathbf{d} \gets \mathbf{1} + \mathbf{e}$ \\
+7: \> \> $\mathbf{r} \gets$ \texttt{vrecpeq\_f32}$(\mathbf{d})$ \> \textit{// reciprocal estimate} \\
+8: \> \> $\mathbf{r} \gets \mathbf{r} \cdot (\mathbf{2} - \mathbf{d} \cdot \mathbf{r})$ \> \textit{// 1 Newton--Raphson iteration} \\
+9: \> \> $\mathbf{silu} \gets \mathbf{x} \cdot \mathbf{r}$ \\
+10:\> \> $\mathbf{out} \gets \mathbf{silu} \cdot \mathbf{mv}$ \\
+11:\> \> \texttt{vst1q\_f32}$(y + i, \mathbf{out})$ \> \textit{// 1 vector store; no intermediate write} \\
+12:\> \textbf{end for} \\
+13:\> \textbf{for} remaining $i < \textit{end}$ \textbf{do} \> \> \textit{// scalar tail} \\
+14:\> \> $y[i] \gets (y[i] / (1 + e^{-y[i]})) \cdot m[i]$ \\
+15:\> \textbf{end for}
+\end{tabbing}
+\hrule\vspace{2pt}
+\end{minipage}
+\label{alg:silu-mul-fused}
+\end{figure}
 
 \paragraph{Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} sweep, 4~KB $\rightarrow$ 16~KB (commit \texttt{f8ed9d2}).}
 The \texttt{writeMany}/\texttt{readMany} loop in \texttt{nn-network.cpp} capped each \texttt{send()}/\texttt{recv()} syscall at 4~KB. With the 8--32~MB TCP buffers tuned in Stage 9, this generates 4$\times$ more syscalls than necessary per slice. We swept four candidate sizes ($n$=20 each):
@@ -917,6 +976,8 @@ A separate companion paper, \texttt{paper/round3\_4\_advances.tex}, contains a m
 \bibitem{muennighoff2024olmoe} N.\ Muennighoff \emph{et al.}, ``OLMoE: Open Mixture-of-Experts Language Models,'' \emph{arXiv:2409.02060}, 2024. \url{https://huggingface.co/allenai/OLMoE-1B-7B-0924}
 \bibitem{torchtitan2024} PyTorch / Meta, ``Introducing Async Tensor Parallelism in PyTorch,'' \emph{PyTorch Discuss forums (TorchTitan project)}, September 2024. \url{https://discuss.pytorch.org/t/distributed-w-torchtitan-introducing-async-tensor-parallelism-in-pytorch/209487}
 \bibitem{lmevalharness2024} L.\ Gao \emph{et al.}, ``A framework for few-shot language model evaluation (\texttt{lm-evaluation-harness}),'' EleutherAI, v0.4.x, 2024--2026. \url{https://github.com/EleutherAI/lm-evaluation-harness}
+\bibitem{byteshape2026} ByteShape, ``A 30B Qwen model walks into a Raspberry Pi\ldots and runs in real time,'' technical blog, 2026. \url{https://byteshape.com/blogs/Qwen3-30B-A3B-Instruct-2507/}
+\bibitem{geerling_aibench47} J.\ Geerling, ``Qwen3-30B-A3B on Raspberry Pi 5 16GB,'' \texttt{geerlingguy/ai-benchmarks} issue \#47, 2026. \url{https://github.com/geerlingguy/ai-benchmarks/issues/47}
 \end{thebibliography}
 
 \vfill
