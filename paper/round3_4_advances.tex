@@ -125,40 +125,41 @@ metric: tokens / wall-clock seconds
 
 \begin{table}[H]
 \centering
-\caption{Measured throughput across the optimisation journey (Stages 1--15, $n$=20 paired per stage).}
+\caption{Measured throughput across the optimisation journey (Stages 1--15, $n$=20 paired per stage). All within-cluster comparisons use the same hardware site, switch and Pi 5 batch; the \#255 comparison is against an 8~GB SKU at a different site.}
 \label{tab:trajectory}
-\small
-\begin{tabular}{lrrl}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{8.4cm}rrl}
 \toprule
-\textbf{Stage} & \textbf{Mean (tok/s)} & \textbf{$\pm$95\% CI} & \textbf{Cumulative} \\
+\textbf{Stage} & \textbf{tok/s} & \textbf{$\pm$CI} & \textbf{Note} \\
 \midrule
 b4rtaz \#255 public ceiling (Pi5 8GB) & 13.04 & --- & baseline \\
-Stage 1--8 baseline & 13.720 & 0.050 & +5.2\% \\
+Stage 1--8 baseline & 13.720 & 0.050 & $+$5.2\% \\
 \midrule
-Stage 9 --- TIER 0 sysctls (GRO off, buffers, swap) & 14.011 & 0.051 & +7.45\% \\
-A2 --- OP\_SILU\_MUL fusion (bit-exact) & 14.081 & 0.055 & +7.99\% \\
+Stage 9 --- TIER 0 sysctls (GRO off, buffers, swap)        & 14.011 & 0.051 & $+$7.45\% \\
+A2 --- OP\_SILU\_MUL fusion (bit-exact)                    & 14.081 & 0.055 & $+$7.99\% \\
 \midrule
-Round 3a --- additional sysctls (autogroup, autocorking, etc) & 14.108 & 0.056 & noise \\
-Round 3b --- madvise weights (RANDOM/DONTFORK) & 14.027 & 0.044 & noise \\
-Round 3c --- per-thread CPU affinity 1-to-1 & 14.023 & 0.035 & noise \\
-Round 3d --- threaded NAPI + deferred IRQ & \emph{12.904} & \emph{---} & \emph{regression $-3.9$\%} \\
+Round 3a --- extra sysctls (autogroup, autocorking)        & 14.108 & 0.056 & noise \\
+Round 3b --- madvise weights (RANDOM/DONTFORK)             & 14.027 & 0.044 & noise \\
+Round 3c --- per-thread CPU affinity 1-to-1                & 14.023 & 0.035 & noise \\
+Round 3d --- threaded NAPI + deferred IRQ                  & \emph{12.904} & \emph{---} & \emph{$-3.9$\%} \\
 \midrule
-Round 4a --- EEVDF \texttt{sched\_setattr} slice 4ms & 14.061 & 0.048 & noise \\
-Round 4b --- \texttt{vm.dirty\_bytes} cap 16MB & 14.027 & 0.044 & noise \\
-Round 4c --- TCP buffers 8MB $\to$ 32MB & 13.968 & 0.038 & noise \\
-Round 4d --- Phase B foundation + \texttt{--tile-sync 4} & \emph{12.904} & \emph{---} & \emph{regression $-8\%$} \\
-Round 4e --- \texttt{max-seq-len} 32768 $\to$ 4096 & 13.965 & 0.027 & noise \\
+Round 4a --- EEVDF \texttt{sched\_setattr} slice 4 ms      & 14.061 & 0.048 & noise \\
+Round 4b --- \texttt{vm.dirty\_bytes} cap 16 MB            & 14.027 & 0.044 & noise \\
+Round 4c --- TCP buffers 8 MB $\to$ 32 MB                  & 13.968 & 0.038 & noise \\
+Round 4d --- Phase B foundation + \texttt{--tile-sync 4}   & \emph{12.904} & \emph{---} & \emph{$-8$\%} \\
+Round 4e --- \texttt{max-seq-len} 32768 $\to$ 4096         & 13.965 & 0.027 & noise \\
 \midrule
-Stage 11 sub-total (Rounds 3+4 net) & \textbf{14.046} & 0.049 & +2.38\% vs Stage 8 \\
+\textbf{Stage 11 sub-total} (Rounds 3+4 net)               & \textbf{14.046} & 0.049 & $+$2.38\% vs S8 \\
 \midrule
-\multicolumn{4}{l}{\emph{2026-05-18 session --- four further cumulative bit-exact commits to \texttt{pi5-cluster}}} \\
-Stage 12 --- remove SW prefetch in matmul (\texttt{64ef787}) & 13.997 & 0.040 & noise \\
-Stage 13 --- TRUE single-pass \texttt{silu\_mul\_F32} (\texttt{1af175c}) & 14.270 & --- & +1.6\% over S11 \\
-Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} 4K $\to$ 16K (\texttt{f8ed9d2}) & \textbf{14.449} & 0.038 & +1.34\% over S13 \\
-Stage 15 --- runtime tweaks persisted via systemd (\texttt{edbc4ce}) & 14.449 & 0.038 & flat (already on) \\
+\multicolumn{4}{l}{\emph{2026-05-18 session: four further bit-exact commits pushed to \texttt{pi5-cluster}}} \\
+Stage 12 --- remove SW prefetch in matmul (\texttt{64ef787})         & 13.997 & 0.040 & noise \\
+Stage 13 --- true single-pass \texttt{silu\_mul\_F32} (\texttt{1af175c}) & 14.270 & --- & $+$1.6\% vs S11 \\
+Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} 4K $\to$ 16K (\texttt{f8ed9d2}) & \textbf{14.449} & 0.038 & $+$1.34\% vs S13 \\
+Stage 15 --- runtime tweaks persisted via systemd (\texttt{edbc4ce}) & 14.449 & 0.038 & flat \\
 \midrule
-\textbf{Final (cold cluster, Stages 1--15, all bit-exact changes applied)} & \textbf{14.449} & \textbf{0.038} & \textbf{+5.31\%} vs Stage 8 \\
-\textbf{Best individual run (n=20, paired)} & \textbf{14.557} & \emph{---} & \textbf{+10.81\%} vs \#255 \\
+\textbf{Final, all bit-exact changes (Stages 1--15)}       & \textbf{14.449} & \textbf{0.038} & \textbf{$+$5.31\% vs S8} \\
+\textbf{Best individual run ($n$=20, paired)}              & \textbf{14.557} & \emph{---}    & \textbf{$+$10.81\% vs \#255} \\
 \bottomrule
 \end{tabular}
 \end{table}
