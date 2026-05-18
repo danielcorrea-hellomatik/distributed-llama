@@ -155,11 +155,11 @@ Round 4e --- \texttt{max-seq-len} 32768 $\to$ 4096         & 13.965 & 0.027 & no
 \multicolumn{4}{l}{\emph{2026-05-18 session: four further bit-exact commits pushed to \texttt{pi5-cluster}}} \\
 Stage 12 --- remove SW prefetch in matmul (\texttt{64ef787})         & 13.997 & 0.040 & noise \\
 Stage 13 --- true single-pass \texttt{silu\_mul\_F32} (\texttt{1af175c}) & 14.270 & --- & $+$1.6\% vs S11 \\
-Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} 4K $\to$ 16K (\texttt{f8ed9d2}) & \textbf{14.449} & 0.038 & $+$1.34\% vs S13 \\
+Stage 14 --- \texttt{MAX\_CHUNK\_SIZE} 4K $\to$ 16K (\texttt{f8ed9d2}) & \textbf{14.449} & 0.038 & $+$1.25\% vs S13 \\
 Stage 15 --- runtime tweaks persisted via systemd (\texttt{edbc4ce}) & 14.449 & 0.038 & flat \\
 \midrule
-\textbf{Final, all bit-exact changes (Stages 1--15)}       & \textbf{14.449} & \textbf{0.038} & \textbf{$+$5.31\% vs S8} \\
-\textbf{Best individual run ($n$=20, paired)}              & \textbf{14.557} & \emph{---}    & \textbf{$+$10.81\% vs \#255} \\
+\textbf{Final, all bit-exact changes (Stages 1--15, mean)} & \textbf{14.449} & \textbf{0.038} & \textbf{$+$5.31\% vs S8, $+$10.81\% vs \#255} \\
+\textbf{Best individual run (from same $n$=20)}            & \textbf{14.557} & \emph{---}    & \textbf{$+$11.63\% vs \#255} \\
 \bottomrule
 \end{tabular}
 \end{table}
