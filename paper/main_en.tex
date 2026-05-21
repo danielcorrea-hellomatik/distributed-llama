@@ -97,7 +97,7 @@
        Inference at the Edge}
 \author{Daniel Correa Villa\\
   \small Hellomatik --- Raspberry Pi Cluster Lab}
-\date{18 May 2026}
+\date{21 May 2026}
 
 \begin{document}
 
@@ -108,7 +108,7 @@
 \noindent
 A 30-billion-parameter Mixture-of-Experts language model (Qwen3-30B-A3B) runs on four Raspberry Pi~5 boards --- roughly \euro500 of CPU-only hardware, no GPU or NPU --- at \textbf{14.449~tok/s} sustained, bit-exact and \textbf{+10.81\%} above the highest publicly documented result for this model and hardware class. We report on the design, optimisation and rigorous benchmarking of a four-node Raspberry Pi~5 (16~GB) cluster for distributed inference of a 30B-parameter Mixture-of-Experts (MoE) language model, Qwen3-30B-A3B (3B active parameters per token, top-8 of 128 experts), over Gigabit Ethernet. The investigation passes through two distinct baselines: an initial \textbf{Llama~3.1~8B dense baseline at 5.70~tok/s} (subsequently abandoned as architecturally unsuitable for the LPDDR4X memory subsystem of the Pi~5), and the \textbf{Qwen3-30B-A3B MoE baseline at 11.40~tok/s} (Stage~4, first measurement after model switch) which becomes the operational starting point for the optimisation work proper. After exhausting framework alternatives infeasible on ARM Linux without GPU/NPU acceleration (EXO requires Apple MLX; prima.cpp hangs on ZMQ topology discovery; llama.cpp RPC regresses 25$\times$), we adopt \texttt{distributed-llama} v0.16.5 with twelve source-level changes developed in this work (eight framework patches plus four bit-exact kernel and op-fusion optimisations) plus persistent runtime kernel tuning.
 
-Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, the cluster's sustained throughput rises from the 11.40~tok/s Qwen3 baseline to \textbf{14.449~tok/s} ($n$=20 paired benchmark, 95\% CI $\pm$0.038, best individual run 14.557~tok/s), a \textbf{+26.75\% gain attributable to the source and kernel-level optimisation work itself}, and \textbf{+10.81\%} above the previously highest publicly documented configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255). Relative to the Stage~8 baseline (13.720~tok/s, last pre-investigation measurement of the production branch) the gain is \textbf{+5.31\%} from the operating-system tuning, MoE op-fusion, network chunk-size sweep, runtime NIC tuning, and inversion of a counter-productive software prefetch documented herein (paired Welch's $t$=51.9, $p\!\ll\!0.001$).
+Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, the cluster's sustained throughput rises from the 11.40~tok/s Qwen3 baseline to \textbf{14.449~tok/s} ($n$=20 paired benchmark, 95\% CI $\pm$0.038, best individual run 14.557~tok/s), a \textbf{+26.75\% gain attributable to the source and kernel-level optimisation work itself}, and \textbf{+10.81\%} above the previously highest publicly documented configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255). Relative to the Stage~8 baseline (13.720~tok/s, last pre-investigation measurement of the production branch) the gain is \textbf{+5.31\%} from the operating-system tuning, MoE op-fusion, network chunk-size sweep, runtime NIC tuning, and inversion of a counter-productive software prefetch documented herein (paired Welch's $t$=51.9, $p\!\ll\!0.001$). A subsequent bit-exact micro-optimisation (Stage~16, a WFE/SEV inter-step barrier replacing the busy-spin) adds a further \textbf{+0.48\%} in a same-session cold paired A/B (14.261~$\to$~14.329~tok/s, Welch's $t$=2.45, $p$=0.014, $n$=40 per arm), and an API robustness fix eliminates an intermittent crash on client disconnect; both ship with a one-command bit-exact verification script.
 
 ARM PMU profiling confirms the residual bottleneck is the LPDDR4X memory bandwidth (49\% backend-stalled cycles, 11.4~GB/s sustained per node out of an approximate 17~GB/s ceiling). We catalogue twenty-six unsuccessful configurations and rejected hypotheses, document the empirical constraint discovery process (strict bit-exact, no kernel rebuild, no model change, no overclock) that progressively narrowed the design space, and identify a single class of bit-exact software optimisation likely to lift sustained throughput further (\emph{Async Tensor Parallelism}; an estimated 250~LOC integration based on the Phase~B foundation already shipped in the repository).
 \end{abstract}
@@ -792,6 +792,37 @@ We packaged them into a new \texttt{dllama-runtime-tweaks.service} systemd unit 
 \paragraph{Negative results catalogued in the same session.}
 Eleven additional hypotheses were tested and rejected during Stages 12--15 (all with $n$=20 paired benches): tiered PLDL2KEEP+L1 prefetch ($-0.47\%$), single +8 prefetch ($-0.61\%$), x-only prefetch ($-0.14\%$), \texttt{\_\_restrict\_\_} pointers ($-0.13\%$), \texttt{rmsNorm\_Q80\_F32\_F32} NEON path (regression --- output-dependent loop), \texttt{add\_F32} and \texttt{scale\_F32} NEON paths (flat --- already auto-vectorised by GCC), \texttt{MAX\_CHUNK\_SIZE} 32~KB and 64~KB (slight regression), explicit IRQ 112 pin to CPU 0 ($-1\%$ --- competes with worker thread 0), \texttt{+lse} march extension (flat --- atomics are not on the hot path), and \texttt{-fno-stack-protector} compile flag (flat --- post-LTO overhead is negligible).
 
+\section{Stage 16 --- WFE/SEV inter-step barrier and API robustness hardening}
+\label{sec:stage16}
+
+A follow-up session revisited the $\sim$17\% of per-token wall-clock spent busy-spinning in the inter-step synchronisation barrier and hardened the serving path. Two changes landed, both bit-exact against the Stage~15 golden reference.
+
+\subsection{API robustness: uncaught-exception crash on client disconnect}
+The OpenAI-compatible \texttt{dllama-api} accept loop caught only \texttt{NnTransferSocketException} and \texttt{NnExecutorException}, but the HTTP request reader (\texttt{readHttpRequest}) throws a plain \texttt{std::runtime\_error} when a client closes the connection mid-request. The exception propagated out of \texttt{main()} to \texttt{terminate()} (\texttt{SIGABRT}), taking down the entire API process --- an intermittent, timing-dependent crash invisible to the strictly sequential benchmark harness but reproducible under realistic connect/disconnect patterns (three service restarts observed during testing). A defensive \texttt{catch (const std::exception\&)} in the accept loop closes the offending connection and keeps serving. Verified: 36 malformed/early-close connections handled with zero service restarts. The inference path is untouched, so the change is bit-exact.
+
+\subsection{WFE/SEV barrier}
+The inter-step barrier in \texttt{nn-executor.cpp} busy-spun on the barrier atomic with an ARM \texttt{yield} hint, so the three threads waiting for a synchronisation step continuously re-read a cache line that the advancing thread writes, generating coherency traffic that contends with the thread driving network I/O on a memory-bandwidth-bound workload. We replaced the spin with the ARMv8 event mechanism: waiters issue \texttt{wfe} (a low-power wait-for-event) and the thread that advances the barrier broadcasts \texttt{sev} (send-event). Correctness rests on the sticky ARM event register --- an \texttt{sev} arriving between a waiter's atomic load and its \texttt{wfe} makes the \texttt{wfe} return immediately --- with the architected-timer event stream as a periodic-wake safety net. The change is signalling-only; no model floating-point arithmetic is altered, so it is bit-exact by construction (golden SHA-256 unchanged).
+
+\subsection{Measurement}
+Absolute throughput drifts $\sim$1--2\% between sessions with ambient temperature and time of day, so we measure with a same-session cold paired A/B rather than against the Stage~15 figure. The \texttt{yield} and \texttt{wfe} builds were deployed alternately, the cluster cold-started between arms, $n$=40 per arm (two pooled $n$=20 cold benches):
+
+\begin{table}[H]
+\centering
+\small
+\caption{Stage 16 WFE/SEV barrier --- same-session cold paired A/B ($n$=40 per arm).}
+\label{tab:stage16}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Build} & \textbf{mean tok/s} & \textbf{95\% CI} & \textbf{stdev} \\
+\midrule
+\texttt{yield} spin (Stage 15 barrier) & 14.261 & $\pm$0.034 & 0.117 \\
+\texttt{wfe/sev} (Stage 16)            & \textbf{14.329} & $\pm$0.042 & 0.137 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The improvement is $+0.068$~tok/s ($+0.48\%$), Welch's $t=2.45$, $p\approx 0.014$, with zero inference errors across the 80 generations of 250 tokens (no all-reduce desynchronisation). The fresh-cold \texttt{yield} baseline (14.261) sits 1.3\% below the Stage~15 best (14.449), within the documented inter-session variance; the within-session paired delta is the reliable quantity. The change is retained: bit-exact, free at runtime, never slower, and it reduces the power and heat of the waiting cores. Raw per-run CSVs for both arms are versioned in \texttt{data/bench/}.
+
 \section{Statistical significance of the Stages 8--15 trajectory}
 \label{sec:significance}
 We report approximate two-sample Welch's $t$-tests on the consecutive-stage means, computed as $t = (\bar{x}_2 - \bar{x}_1) / \sqrt{s_1^2/n + s_2^2/n}$ with $n=20$, df$\approx 19$, two-tailed. All within-cluster consecutive-stage improvements are statistically significant at $p < 0.05$; the cumulative Stage 8 $\to$ Stage 15 improvement is significant at $p \ll 0.001$. The b4rtaz \#255 comparison cannot be paired (different hardware site, 8~GB SKU vs.\ our 16~GB SKU) and is reported as a face-value reference, with the caveat detailed in the Threats to Validity section (\S\ref{sec:threats}). Stage~12 (a prerequisite kernel refactor) measured throughput-neutral at the combined cluster level, so the significance of the single-pass fusion that followed is reported as Stage~11~$\to$~Stage~13.
@@ -990,6 +1021,8 @@ python3 deploy/scripts/bench_n50.py
 Each invokes \texttt{curl} against \texttt{http://localhost:9999/v1/chat/completions} with \texttt{temperature}=0 and a fixed prompt. Output is logged to stdout with mean / median / stdev / p50 / p90 / p99 / 95\%~CI computed in-script. The cluster \texttt{systemd} units, source patches and \texttt{cluster-control.sh} operator script are provided alongside this report.
 
 The full stage-to-commit mapping with SHA-256 of model and tokenizer artefacts is in \texttt{docs/COMMIT-HASHES.md}.
+
+\paragraph{Bit-exact verification (one command).} The published golden reference and a checker are versioned at \texttt{deploy/scripts/verify\_bitexact.py}: it issues a fixed deterministic request (prompt \emph{``List the first 12 prime numbers and then explain what a prime number is in one sentence.''}, \texttt{max\_tokens}=160, \texttt{temperature}=0, \texttt{seed}=42) and compares the SHA-256 of the generated text against the reference \texttt{bdbcaec6\ldots f2328645}, confirmed identical across the unoptimised (\texttt{yield}) and optimised (WFE) builds. \texttt{deploy/scripts/reproduce.sh} runs the full pipeline (cold restart $\rightarrow$ readiness $\rightarrow$ bit-exact check $\rightarrow$ $n$=20 benchmark) from an operator machine, and a \texttt{CITATION.cff} is provided at the repository root.
 
 \section*{Appendix B. Historical snapshot at Stage 6 (12.71~tok/s)}
 \label{sec:mid-summary}
