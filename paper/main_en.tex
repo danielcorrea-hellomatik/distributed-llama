@@ -26,6 +26,8 @@
 \usepackage{tabularx}
 \usepackage{multirow}
 \usepackage{float}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
 \usepackage{enumitem}
 \setlist{itemsep=2pt,topsep=3pt}
 
@@ -130,6 +132,13 @@ Three intermingled tracks unfolded over the course of the investigation: (i)~arc
 \end{enumerate}
 
 \section{Related work}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.56\linewidth]{fig_comparison.pdf}
+\caption{Same model and hardware class (Qwen3-30B-A3B Q40 on 4$\times$Raspberry Pi~5): this work versus the highest publicly documented result (b4rtaz~\#255), a bit-exact $+10.81\%$ improvement.}
+\label{fig:comparison}
+\end{figure}
 
 The state of the art for distributed CPU LLM inference is divided between three approaches:
 \begin{itemize}[leftmargin=*,nosep]
@@ -430,6 +439,13 @@ Prefill rate degrades slightly with prompt size (KV-cache growth and attention $
 
 \begin{figure}[H]
 \centering
+\includegraphics[width=\linewidth]{fig_trajectory.pdf}
+\caption{Sustained throughput across the optimisation trajectory (Qwen3-30B-A3B Q40, 4$\times$Raspberry Pi~5). The dashed line marks the highest publicly documented result for this model and hardware class (13.04~tok/s, b4rtaz~\#255); the final Stage~14--15 configuration reaches 14.449~tok/s ($n$=20, 95\% CI $\pm$0.038). The Llama~3.1~8B dense bar is the abandoned starting point, shown for context.}
+\label{fig:trajectory}
+\end{figure}
+
+\begin{figure}[H]
+\centering
 \begin{tikzpicture}
 \begin{axis}[
   width=14cm,height=7cm,
@@ -663,6 +679,13 @@ We cherry-picked four commits from the archived \texttt{opt-b5b6-tiled-sync} bra
 
 \subsubsection{Empirical bottleneck characterisation}
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{fig_bottleneck.pdf}
+\caption{Per-token wall-clock breakdown from ARM PMU profiling (\texttt{perf stat}) and \texttt{strace}. The workload is DRAM-bandwidth-bound (49\% backend-stalled cycles, 11.4~GB/s of $\sim$17~GB/s per node): the Q40 matmul dominates and the synchronisation barrier is the only software-addressable slack --- the target of the Stage~16 WFE/SEV change.}
+\label{fig:bottleneck}
+\end{figure}
+
 ARM PMU profiling (\texttt{perf stat -e l2d\_cache\_refill,l2d\_cache\_wb,bus\_access,stalled-cycles-backend,cpu-cycles,instructions} for 60 s during sustained inference):
 
 \begin{table}[H]
@@ -822,6 +845,13 @@ Absolute throughput drifts $\sim$1--2\% between sessions with ambient temperatur
 \end{table}
 
 The improvement is $+0.068$~tok/s ($+0.48\%$), Welch's $t=2.45$, $p\approx 0.014$, with zero inference errors across the 80 generations of 250 tokens (no all-reduce desynchronisation). The fresh-cold \texttt{yield} baseline (14.261) sits 1.3\% below the Stage~15 best (14.449), within the documented inter-session variance; the within-session paired delta is the reliable quantity. The change is retained: bit-exact, free at runtime, never slower, and it reduces the power and heat of the waiting cores. Raw per-run CSVs for both arms are versioned in \texttt{data/bench/}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{fig_stage16_ab.pdf}
+\caption{Stage~16 WFE/SEV barrier versus the yield-spin baseline: same-session cold paired A/B, $n$=40 per arm. Box (IQR and median), individual runs (jittered), and mean~$\pm$~95\% CI. The $+0.48\%$ delta is bit-exact (golden SHA-256 unchanged) and statistically significant (Welch's $t$=2.45, $p$=0.014).}
+\label{fig:stage16ab}
+\end{figure}
 
 \section{Statistical significance of the Stages 8--15 trajectory}
 \label{sec:significance}
