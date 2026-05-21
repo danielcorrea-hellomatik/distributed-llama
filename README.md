@@ -125,7 +125,7 @@ After re-baselining the cluster at **13.720 +/- 0.050 tok/s** (post-Phase B foun
 - `net.ipv4.tcp_rmem = 4096 87380 8388608` and `net.ipv4.tcp_wmem = 4096 65536 8388608` -- per-socket auto-tune ceilings; the previous `tcp_wmem` middle value of 16 KB was a hard bottleneck.
 - `vm.swappiness = 1` (was 60) -- with 5.5 GB resident on 16 GB RAM there is no swap pressure; this disables proactive paging.
 
-Changes are persistent via `/etc/sysctl.d/99-dllama.conf` and `/etc/systemd/system/dllama-eth-tune.service` on every node, surviving reboot.
+Changes are persistent via `/etc/sysctl.d/99-dllama.conf` and `/etc/systemd/system/eth0-tuning.service` on every node, surviving reboot.
 
 Measured impact (n=20, paired, 95% CI):
 
@@ -214,8 +214,9 @@ Individual sysctls within the noise floor (+/-0.15 tok/s), but applied as defens
   (#21058), already fuses RMS+weight inline (#22423), and has no offload scheduler (#23170).
 
 See [docs/SESSION-2026-05-17-EXTENDED.md](docs/SESSION-2026-05-17-EXTENDED.md) for the
-full Round-3+4 transcript, the [companion paper](paper/round3_4_advances.tex) for an
-academic-style write-up, and [docs/PHASE-B-WIRING.md](docs/PHASE-B-WIRING.md) for the
+full Round-3+4 transcript, the [paper](paper/main_en.pdf) (section "Stage 11 -- Rounds 3
+and 4", including the literature-survey table of every technique evaluated and rejected)
+for the academic write-up, and [docs/PHASE-B-WIRING.md](docs/PHASE-B-WIRING.md) for the
 next sprint candidate.
 
 ### Stage 12 -- Remove software prefetch in matmul (Q80 x Q40) [commit 64ef787]
@@ -597,13 +598,13 @@ If this work is useful in academic context, please cite it as:
 ```
 @misc{correa2026dllamapi5cluster,
   author = {Correa Villa, Daniel},
-  title  = {Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster: an empirical evaluation of frameworks, optimisations and failure modes for edge LLM serving},
+  title  = {Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster: An Empirical Evaluation of Frameworks, Bit-Exact Optimisations, and Failure Modes for Edge Mixture-of-Experts Serving},
   year   = {2026},
   url    = {https://github.com/danielcorrea-hellomatik/distributed-llama}
 }
 ```
 
-The full technical report (11 pages, 13 references, 7 figures) is in [`paper/main_en.pdf`](paper/main_en.pdf).
+The full technical report (18 pages, 20+ references) is in [`paper/main_en.pdf`](paper/main_en.pdf).
 
 ---
 
