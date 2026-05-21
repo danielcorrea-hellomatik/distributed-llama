@@ -116,15 +116,15 @@ Copy from this repository and enable:
 
 ```bash
 # All nodes
-sudo cp systemd/cpu-performance.service /etc/systemd/system/
-sudo cp systemd/eth0-tuning.service /etc/systemd/system/
+sudo cp deploy/systemd/cpu-performance.service /etc/systemd/system/
+sudo cp deploy/systemd/eth0-tuning.service /etc/systemd/system/
 
 # Root only
-sudo cp systemd/dllama-api.service /etc/systemd/system/
-sudo cp systemd/dllama-proxy.service /etc/systemd/system/
+sudo cp deploy/systemd/dllama-api.service /etc/systemd/system/
+sudo cp deploy/systemd/dllama-proxy.service /etc/systemd/system/
 
 # Workers only
-sudo cp systemd/dllama-worker.service /etc/systemd/system/
+sudo cp deploy/systemd/dllama-worker.service /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable cpu-performance eth0-tuning
@@ -143,8 +143,8 @@ Adjust the IPs in `dllama-api.service` to match your actual workers, e.g.:
 ## Apply sysctl tuning
 
 ```bash
-sudo cp sysctl/99-dllama-extra.conf /etc/sysctl.d/
-sudo cp sysctl/99-dllama-sched.conf /etc/sysctl.d/
+sudo cp deploy/sysctl/99-dllama-extra.conf /etc/sysctl.d/
+sudo cp deploy/sysctl/99-dllama-sched.conf /etc/sysctl.d/
 sudo sysctl --system
 ```
 
@@ -153,8 +153,8 @@ sudo sysctl --system
 ```bash
 sudo apt-get install -y python3-venv
 python3 -m venv ~/litellm-env
-~/litellm-env/bin/pip install --quiet flask waitress requests
-cp scripts/dllama_proxy.py ~/dllama_proxy.py
+~/litellm-env/bin/pip install --quiet -r deploy/scripts/requirements.txt
+cp deploy/scripts/dllama_proxy.py ~/dllama_proxy.py
 sudo systemctl start dllama-proxy
 ```
 
@@ -193,7 +193,7 @@ curl -s -m 30 http://root-node:9999/v1/chat/completions \
     -d '{"model":"qwen3","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":10}'
 
 # Full benchmark (20 runs with statistics):
-ssh rpi@root-node 'python3 ~/distributed-llama/scripts/benchmark.py'
+ssh rpi@root-node 'python3 ~/distributed-llama/deploy/scripts/benchmark.py'
 ```
 
 Expected result on a correctly-set 4-Pi cluster: ~13.8 tok/s mean, 95% CI +/- 0.05 tok/s.
@@ -203,13 +203,13 @@ Expected result on a correctly-set 4-Pi cluster: ~13.8 tok/s mean, 95% CI +/- 0.
 The `deploy/scripts/cluster-control.sh` helper handles day-to-day operations:
 
 ```bash
-./scripts/cluster-control.sh status     # what is running
-./scripts/cluster-control.sh test       # quick smoke test
-./scripts/cluster-control.sh temp       # temperatures
-./scripts/cluster-control.sh memory     # RAM usage per node
-./scripts/cluster-control.sh restart    # ordered restart
-./scripts/cluster-control.sh stop       # graceful stop
-./scripts/cluster-control.sh logs api   # tail logs of dllama-api
+./deploy/scripts/cluster-control.sh status     # what is running
+./deploy/scripts/cluster-control.sh test       # quick smoke test
+./deploy/scripts/cluster-control.sh temp       # temperatures
+./deploy/scripts/cluster-control.sh memory     # RAM usage per node
+./deploy/scripts/cluster-control.sh restart    # ordered restart
+./deploy/scripts/cluster-control.sh stop       # graceful stop
+./deploy/scripts/cluster-control.sh logs api   # tail logs of dllama-api
 ```
 
 ## Tuning notes

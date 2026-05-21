@@ -1,0 +1,5 @@
+# Python dependencies for the OpenAI-compatible proxy (root node only).
+# Pinned for reproducibility — see INSTALL.md "Install the Python proxy".
+flask==3.0.3
+waitress==3.0.0
+requests==2.32.3

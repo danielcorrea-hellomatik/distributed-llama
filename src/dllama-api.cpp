@@ -641,6 +641,13 @@ static void server(AppInferenceContext *context) {
             printf("Socket error: %d %s\n", e.code, e.what());
         } catch (const NnExecutorException &e) {
             throw;
+        } catch (const std::exception &e) {
+            // Per-connection failure (client disconnect, EOF, malformed request,
+            // bad Content-Length). Recover instead of letting std::runtime_error
+            // propagate out of main() -> terminate() -> SIGABRT, which used to take
+            // the whole API (and thus the cluster) down on a client disconnect.
+            // The NnSocket dtor closes this fd; keep accepting the next connection.
+            printf("⚠️  Request dropped (connection error): %s\n", e.what());
         }
     }
 }

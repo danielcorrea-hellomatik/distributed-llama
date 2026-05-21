@@ -234,19 +234,23 @@ static inline void executorStepLoop(NnExecutorThread *thread) {
 
             context->doneThreadCount.store(0, std::memory_order_relaxed);
             context->currentStepIndex.fetch_add(1, std::memory_order_release);
+#if defined(__aarch64__) || defined(__arm__)
+            // WFE/SEV: wake up the workers blocked on WFE for this barrier.
+            // Bit-exact: SEV is pure signaling, no impact on compute.
+            asm volatile ("sev" ::: "memory");
+#endif
         } else {
-            // Inter-step barrier busy-spin. The yield hint tells the CPU
-            // we are in a polling loop; on ARM the hardware can reduce
-            // power and let other SMT siblings progress (no-op on A76
-            // which has no SMT, but harmless). Mainly it tags the loop
-            // for the scheduler so a softirq can preempt for network
-            // processing during sync steps.
+            // Inter-step barrier WFE wait. WFE (Wait For Event) puts the core
+            // into a low-power state until SEV is broadcast OR an event arrives
+            // (timer interrupt, etc.). Compared to yield-spin: similar wall-time
+            // (the wait is real network latency), but cores stop burning cycles
+            // and the event-driven wake-up reduces tail latency p99.
             while (
                 context->currentStepIndex.load(std::memory_order_acquire) == currentStepIndex &&
                 context->isAlive.load(std::memory_order_acquire)
             ) {
 #if defined(__aarch64__) || defined(__arm__)
-                asm volatile ("yield" ::: "memory");
+                asm volatile ("wfe" ::: "memory");
 #elif defined(__x86_64__) || defined(__i386__)
                 asm volatile ("pause" ::: "memory");
 #endif
@@ -269,15 +273,15 @@ static inline void *executorWorkerLoop(void *arg) {
     dllamaSetEevdfSliceNs(4000000ULL);
 
     while (true) {
-        // Wait for next forward() call. Spin on the generation counter; pause
-        // hint reduces power and avoids hammering the cache line.
+        // Wait for next forward() call via WFE on the generation counter.
+        // SEV is sent by forward() after fetch_add(generation).
         unsigned long long gen;
         for (;;) {
             gen = context->generation.load(std::memory_order_acquire);
             if (gen != lastGen) break;
             if (context->shutdown.load(std::memory_order_acquire)) return nullptr;
 #if defined(__aarch64__) || defined(__arm__)
-            asm volatile ("yield" ::: "memory");
+            asm volatile ("wfe" ::: "memory");
 #elif defined(__x86_64__) || defined(__i386__)
             asm volatile ("pause" ::: "memory");
 #endif
@@ -288,6 +292,10 @@ static inline void *executorWorkerLoop(void *arg) {
         executorStepLoop(thread);
 
         context->workersDone.fetch_add(1, std::memory_order_release);
+#if defined(__aarch64__) || defined(__arm__)
+        // Wake thread 0 blocked on WFE for forward() completion.
+        asm volatile ("sev" ::: "memory");
+#endif
     }
 }
 
@@ -306,18 +314,22 @@ void NnExecutor::forward() {
         context.timer->reset();
     }
 
-    // Release the workers: they have been spinning on this counter inside
-    // executorWorkerLoop and will pick up the new generation and start work.
+    // Release the workers: they have been waiting on WFE in executorWorkerLoop.
+    // The SEV broadcasts the wake-up; workers re-check the generation atomic
+    // (memory_order_acquire) and either resume work or re-enter WFE.
     context.generation.fetch_add(1, std::memory_order_release);
+#if defined(__aarch64__) || defined(__arm__)
+    asm volatile ("sev" ::: "memory");
+#endif
 
     // Run thread 0 inline on the calling thread.
     executorStepLoop(&threads[0]);
 
-    // Wait for the workers to finish this generation.
+    // Wait for the workers to finish this generation via WFE.
     const NnUint expectedDone = nThreads - 1;
     while (context.workersDone.load(std::memory_order_acquire) < expectedDone) {
 #if defined(__aarch64__) || defined(__arm__)
-        asm volatile ("yield" ::: "memory");
+        asm volatile ("wfe" ::: "memory");
 #elif defined(__x86_64__) || defined(__i386__)
         asm volatile ("pause" ::: "memory");
 #endif

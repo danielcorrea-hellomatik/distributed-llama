@@ -96,8 +96,7 @@
        A Bit-Exact Empirical Study of CPU-Only Mixture-of-Experts\\
        Inference at the Edge}
 \author{Daniel Correa Villa\\
-  \small Hellomatik --- Raspberry Pi Cluster Lab\\
-  \small \texttt{}}
+  \small Hellomatik --- Raspberry Pi Cluster Lab}
 \date{18 May 2026}
 
 \begin{document}
@@ -175,14 +174,14 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 \centering
 \caption{Cluster hardware inventory.}
 \small
-\begin{tabular}{lcccc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Node} & \textbf{Role} & \textbf{LAN IP} & \textbf{Tailscale IP} & \textbf{Storage} \\
+\textbf{Node} & \textbf{Role} & \textbf{LAN IP} & \textbf{Storage} \\
 \midrule
-\texttt{rpi-1005} & root + serving & 192.168.1.74 & 100.64.0.1 & NVMe 457 GB \\
-\texttt{rpi-1006} & worker        & 192.168.1.77 & 100.64.0.2   & NVMe 457 GB \\
-\texttt{rpi-1007} & worker        & 192.168.1.75 & 100.64.0.3  & NVMe 457 GB \\
-\texttt{rpi-1008} & worker        & 192.168.1.76 & 100.64.0.4 & NVMe 457 GB \\
+\texttt{rpi-1005} & root + serving & 192.168.1.74 & NVMe 457 GB \\
+\texttt{rpi-1006} & worker        & 192.168.1.77 & NVMe 457 GB \\
+\texttt{rpi-1007} & worker        & 192.168.1.75 & NVMe 457 GB \\
+\texttt{rpi-1008} & worker        & 192.168.1.76 & NVMe 457 GB \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -503,7 +502,7 @@ rpi-1008 (worker) & 56.0 $^\circ$C & 0x0 \\
 \section{Stage 9 --- TIER 0 kernel network and scheduler tuning}
 \label{sec:stage9}
 
-After the initial publication of this report at 12.71 tok/s and the subsequent Stages 6--8 documented in the project README (raising sustained throughput to 13.720 tok/s), a structured six-subagent research round identified one further round of OS-level network and memory tunings that yielded a measurable improvement without any source-code changes.
+After the initial publication of this report at 12.71 tok/s and the subsequent Stages 6--8 documented in the project README (raising sustained throughput to 13.720 tok/s), a structured research round identified one further round of OS-level network and memory tunings that yielded a measurable improvement without any source-code changes.
 
 \subsection{Configuration changes}
 
@@ -552,16 +551,16 @@ $\Delta$ vs.\ public ceiling (13.04) & --- & +7.45\% \\
 
 \subsection{Two rejected candidates from the same research round}
 
-The same six-subagent research round surfaced two further claims that were investigated and rejected:
+The same research round surfaced two further claims that were investigated and rejected:
 
 \begin{enumerate}[leftmargin=*,nosep]
   \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} months earlier. Cannot be captured twice.
-  \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error from an LLM research subagent and is documented here as a cautionary tale.
+  \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error in the surveyed material and is documented here as a cautionary tale.
 \end{enumerate}
 
 \subsection{Open work after Stage 9}
 
-The structured research round produced a ranked plan of further candidates (full plan in \texttt{docs/SESSION-2026-05-17.md}):
+The structured research round produced a ranked plan of further candidates:
 
 \begin{itemize}[leftmargin=*,nosep]
   \item \textbf{Tier 2 --- Close Phase B (Option C, $\sim$40 LOC)}: the \texttt{opt-b5b6-tiled-sync} branch carries 562 LOC of async-sync orchestrator, tiled matmul wrapper, and the \texttt{--tile-sync K} flag, all compiled but unwired. Estimated additional +5--12\%; high integration risk (the same code path that broke the cluster during PGO and \texttt{isolcpus} experiments).
@@ -588,7 +587,7 @@ The Qwen3-MoE FFN per-expert ops are: $w_1$-matmul $\to$ $w_3$-matmul $\to$ silu
 
 \subsection{Stage 11 --- Rounds 3 and 4 (Linux papers research and ceiling investigation)}
 
-We launched four parallel background research agents:
+We carried out four parallel research threads:
 \begin{enumerate}[leftmargin=*,nosep]
   \item Linux Plumbers / SOSP / OSDI / EuroSys / USENIX ATC papers 2024--2026.
   \item eBPF / XDP / AF\_XDP / io\_uring / kernel-bypass.
@@ -600,12 +599,12 @@ We applied and measured $\sim$15 distinct configurations. \textbf{The Round 3+4 
 
 \subsubsection{Literature survey: techniques evaluated and rejected}
 
-The four agents returned ranked, actionable candidates from the 2024--2026 systems literature (Linux Plumbers, OSDI, EuroSys, USENIX ATC, LWN, arXiv). Table~\ref{tab:litsurvey} records each technique, its source, whether it was applicable to a stock Pi~OS 6.12 / Cortex-A76 / 1~GbE cluster under our constraints, and the empirical outcome. The recurring reason for inapplicability is structural: the highest-leverage modern techniques require either a newer kernel, a hardware feature the A76 silicon lacks, or a reboot/kernel-rebuild we had ruled out --- which is precisely what makes the surviving bit-exact wins deployable on stock hardware.
+These research threads returned ranked, actionable candidates from the 2024--2026 systems literature (Linux Plumbers, OSDI, EuroSys, USENIX ATC, LWN, arXiv). Table~\ref{tab:litsurvey} records each technique, its source, whether it was applicable to a stock Pi~OS 6.12 / Cortex-A76 / 1~GbE cluster under our constraints, and the empirical outcome. The recurring reason for inapplicability is structural: the highest-leverage modern techniques require either a newer kernel, a hardware feature the A76 silicon lacks, or a reboot/kernel-rebuild we had ruled out --- which is precisely what makes the surviving bit-exact wins deployable on stock hardware.
 
 \begin{table}[H]
 \centering
 \scriptsize
-\caption{Techniques surveyed by the four research agents, with applicability to a stock Pi~5 / kernel 6.12 / 1~GbE cluster under the bit-exact, no-reboot, no-quality-loss constraints.}
+\caption{Techniques surveyed during the research round, with applicability to a stock Pi~5 / kernel 6.12 / 1~GbE cluster under the bit-exact, no-reboot, no-quality-loss constraints.}
 \label{tab:litsurvey}
 \begin{tabular}{p{4.0cm}p{2.7cm}p{3.1cm}p{3.1cm}}
 \toprule
@@ -970,10 +969,10 @@ The cluster sits at a single physical site behind one Gigabit Ethernet switch wi
 All measurements are for \emph{one} model: Qwen3-30B-A3B Q40 (SHA-256 of model artefact in \texttt{docs/COMMIT-HASHES.md}). Stage 9 (\emph{TIER 0}) is a kernel-level network tuning bundle that is model-agnostic; Stages 10 and 13 (op-fusion of SILU+MUL) are MoE-specific (Llama-class dense models do not exercise the fused path); Stage 14 (\texttt{MAX\_CHUNK\_SIZE}) is generic. We have not benchmarked on Llama 3.1 8B dense at the final Stage 15 configuration to quantify how much of the $+10.81\%$ generalises beyond Qwen3-MoE. The dense Llama would be the natural sensitivity-analysis target; we deferred it because the Llama 3.1 8B model file is at a different path and a clean cold-cluster paired benchmark requires $\sim$30 minutes of additional cluster downtime per measurement.
 
 \paragraph{Quality preservation.}
-We have not run a standardised LLM quality benchmark (MMLU, HellaSwag, ARC, GSM8K via \texttt{lm-eval-harness}~\cite{lmevalharness2024}) on the final Stage 15 configuration. The SHA-256 bit-exactness guarantee implies \emph{identical} model output to the baseline of comparison, so a quality benchmark would by construction return the same score; nevertheless an external numerical confirmation would strengthen the manuscript and is documented as a TIER~A deliverable in \texttt{docs/PAPER-PUBLICATION-PLAN.md}. Expected execution time on the cluster: 8--12 hours overnight.
+We have not run a standardised LLM quality benchmark (MMLU, HellaSwag, ARC, GSM8K via \texttt{lm-eval-harness}~\cite{lmevalharness2024}) on the final Stage 15 configuration. The SHA-256 bit-exactness guarantee implies \emph{identical} model output to the baseline of comparison, so a quality benchmark would by construction return the same score; nevertheless an external numerical confirmation would strengthen the manuscript. Expected execution time on the cluster: 8--12 hours overnight.
 
 \paragraph{Energy efficiency.}
-We do not report joules per token. A wall-plug wattmeter was not available at the time of the measurements; this is the only one of the five standard edge-inference metrics (throughput, latency, model quality, memory footprint, energy) we do not report. Documented as a TIER~A deliverable in \texttt{docs/PAPER-PUBLICATION-PLAN.md}; protocol drafted (5 min sustained decode minus 5 min idle, multiplied across 4 nodes, divided by sustained tok/s).
+We do not report joules per token. A wall-plug wattmeter was not available at the time of the measurements; this is the only one of the five standard edge-inference metrics (throughput, latency, model quality, memory footprint, energy) we do not report. Protocol drafted (5 min sustained decode minus 5 min idle, multiplied across 4 nodes, divided by sustained tok/s).
 
 \section*{Appendix A. Reproducibility}
 
@@ -990,7 +989,7 @@ python3 deploy/scripts/bench_n50.py
 \end{lstlisting}
 Each invokes \texttt{curl} against \texttt{http://localhost:9999/v1/chat/completions} with \texttt{temperature}=0 and a fixed prompt. Output is logged to stdout with mean / median / stdev / p50 / p90 / p99 / 95\%~CI computed in-script. The cluster \texttt{systemd} units, source patches and \texttt{cluster-control.sh} operator script are provided alongside this report.
 
-The full stage-to-commit mapping with SHA-256 of model and tokenizer artefacts is in \texttt{docs/COMMIT-HASHES.md}. The full handoff document for the next investigation session, including the deferred TIER~A deliverables (\texttt{lm-eval-harness} quality evaluation, wall-plug energy measurement) and TIER~B/C polish items, is in \texttt{docs/PAPER-PUBLICATION-PLAN.md}.
+The full stage-to-commit mapping with SHA-256 of model and tokenizer artefacts is in \texttt{docs/COMMIT-HASHES.md}.
 
 \section*{Appendix B. Historical snapshot at Stage 6 (12.71~tok/s)}
 \label{sec:mid-summary}

@@ -17,3 +17,12 @@ server
 /dllama-*
 *.exe
 *.spv
+
+# Internal working notes — excluded from the public artefact
+docs/*_NEW_CLAUDE.md
+docs/HANDOFF.md
+docs/REPO_INVENTORY.md
+docs/SESSION-*.md
+docs/PAPER-PUBLICATION-PLAN.md
+docs/DEEP-RESEARCH-*.md
+docs/IMPLEMENTATION-FEASIBILITY-*.md

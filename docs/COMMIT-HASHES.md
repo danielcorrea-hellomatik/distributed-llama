@@ -61,17 +61,40 @@ the 14.449 tok/s headline.
 
 ## Bit-exact reference (golden output)
 
-Generated with `--seed 42 --temperature 0` on Stage 11 (commit 162cd83 →
-later confirmed identical on Stage 15 / commit edbc4ce):
+Captured on the running cluster with a fixed deterministic request and
+confirmed **identical across the unoptimised (yield-spin barrier) and
+optimised (WFE/SEV barrier) builds** — i.e. the optimisations do not alter
+model output. Verified reproducibly on 2026-05-21 (≥4 independent runs).
 
 ```
-Prompt: "Write 200 words about distributed computing"
-First 100 generated tokens (SHA-256 of token-id sequence):
-  <to be generated and added in a follow-up commit; pending external lm-eval-harness run>
+Prompt      : "List the first 12 prime numbers and then explain what a prime number is in one sentence."
+Params      : max_tokens=160, temperature=0, seed=42
+SHA-256 of generated text:
+  bdbcaec68c56dd4f5cf07f0dc8e60c8d17209fd14e998d2a3c437144f2328645
+```
+
+Reproduce / verify in one command (run on the root node, or set ENDPOINT):
+
+```bash
+python3 deploy/scripts/verify_bitexact.py
+# -> "result : PASS (bit-exact)" and exit code 0
 ```
 
 Bit-exact validation procedure documented in `paper/main_en.tex` §4.3
 (subsection "Bit-exact output validation").
+
+## Session 2026-05-21 — crash fix + WFE/SEV barrier (additive, does not alter the table above)
+
+Two changes landed on top of Stage 15, both **bit-exact** (golden SHA above
+unchanged) and measured with a clean paired A/B (cold cluster between arms):
+
+| Change | What | tok/s (n) | vs yield | Significance | Errors |
+|--------|------|-----------|----------|--------------|--------|
+| `dllama-api` accept-loop `catch(std::exception&)` | stops a client disconnect from aborting the whole API (was SIGABRT) | n/a (stability) | — | 36 bad conns caught, 0 restarts | — |
+| WFE/SEV inter-step barrier (replaces `yield` spin) | cores wait on event instead of busy-spinning | 14.329 (n=40) | yield 14.261 (n=40); **+0.48%** | Welch t=2.45, p≈0.014 | 0 in 80×250-tok runs |
+
+Raw per-run CSV data for both arms is in `data/bench/`. Reproduce with
+`deploy/scripts/reproduce.sh`.
 
 ## Benchmark script versions
 

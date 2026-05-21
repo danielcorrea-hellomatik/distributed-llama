@@ -118,7 +118,7 @@ The recompiled binary contained **322 `udot/sdot` instructions**. Each contribut
 
 ### Stage 9 -- Kernel sysctls + GRO disable (13.72 -> 14.011 tok/s, +2.12%)
 
-After re-baselining the cluster at **13.720 +/- 0.050 tok/s** (post-Phase B foundation work, see [docs/SESSION-2026-05-17.md](docs/SESSION-2026-05-17.md)), we applied a low-risk batch of OS-level network tunings driven by a six-subagent research round. Each Pi received:
+After re-baselining the cluster at **13.720 +/- 0.050 tok/s** (post-Phase B foundation work), we applied a low-risk batch of OS-level network tunings identified by a structured research round. Each Pi received:
 
 - `ethtool -K eth0 gro off` -- Generic Receive Offload coalesces incoming packets, adding 50-200 us of intentional latency. For 510 KB sync bursts on a 1 GbE LAN this is pure overhead.
 - `net.core.rmem_max = 8388608` (was 256 KB) and `net.core.wmem_max = 8388608` -- allow TCP receive/send windows to grow past the 256 KB sync bursts.
@@ -172,7 +172,7 @@ keep it. Implementation: [src/nn/nn-core.hpp](src/nn/nn-core.hpp) (enum + config
 
 ### Stage 11 -- Phase B async-sync foundation + Round 3/4 tunings (no measurable gain)
 
-We launched **four parallel background research agents** investigating Linux Plumbers
+We carried out **four parallel research threads** investigating Linux Plumbers
 Conference, SOSP, OSDI, EuroSys, USENIX ATC papers from 2024-2026, plus eBPF/XDP/AF_XDP/
 io_uring kernel-bypass techniques, Linux scheduler (EEVDF) tunings, and ARM-specific
 cache/prefetcher/NUMA work. The agents returned ~30 candidate techniques; we tested ~15.
@@ -213,10 +213,9 @@ Individual sysctls within the noise floor (+/-0.15 tok/s), but applied as defens
 - llama.cpp PRs #21058 / #22423 / #23170: not applicable. dllama is already 64-byte aligned
   (#21058), already fuses RMS+weight inline (#22423), and has no offload scheduler (#23170).
 
-See [docs/SESSION-2026-05-17-EXTENDED.md](docs/SESSION-2026-05-17-EXTENDED.md) for the
-full Round-3+4 transcript, the [paper](paper/main_en.pdf) (section "Stage 11 -- Rounds 3
+See the [paper](paper/main_en.pdf) (section "Stage 11 -- Rounds 3
 and 4", including the literature-survey table of every technique evaluated and rejected)
-for the academic write-up, and [docs/PHASE-B-WIRING.md](docs/PHASE-B-WIRING.md) for the
+for the academic write-up, and [docs/PHASE-B-PLAN.md](docs/PHASE-B-PLAN.md) for the
 next sprint candidate.
 
 ### Stage 12 -- Remove software prefetch in matmul (Q80 x Q40) [commit 64ef787]
@@ -328,7 +327,7 @@ All rejected configurations are documented in detail in [`docs/FAILED-ATTEMPTS.m
 
 ### Research process
 
-The optimisations above are not guesses. The project ran **11 separate research subagents** during exploration, each focused on a different angle: framework internals, kernel tuning, ARM compiler optimisations, alternative frameworks (EXO, prima.cpp, MNN-LLM, Cake, mistral.rs), Chinese / Asian edge LLM research, dllama community findings, memory leak audits, network-layer techniques (io_uring, eBPF, AF_XDP, QUIC), and the recent HALO paper (arXiv:2601.11676). The consolidated findings are recorded in [`docs/SUBAGENT-RESEARCH.md`](docs/SUBAGENT-RESEARCH.md).
+The optimisations above are not guesses. The project ran **11 separate research tracks** during exploration, each focused on a different angle: framework internals, kernel tuning, ARM compiler optimisations, alternative frameworks (EXO, prima.cpp, MNN-LLM, Cake, mistral.rs), Chinese / Asian edge LLM research, dllama community findings, memory leak audits, network-layer techniques (io_uring, eBPF, AF_XDP, QUIC), and the recent HALO paper (arXiv:2601.11676). The consolidated findings are recorded in [`docs/RESEARCH-CONSOLIDATED.md`](docs/RESEARCH-CONSOLIDATED.md).
 
 The key insight from this research: **our 14.046 tok/s sits 7.72% above the publicly documented ceiling** for the same hardware class (13.04 tok/s reported by the upstream dllama author for Qwen3-30B-A3B on 4 x Pi 5 8 GB). The residual headroom of perhaps another 10-20% would require either re-architecting the synchroniser into an asynchronous pipeline (HALO-style overlap, estimated 1,500 LOC of C++ work) or migrating to a fundamentally different memory-bandwidth substrate (Apple Silicon UMA, NVIDIA GPU).
 
@@ -424,12 +423,12 @@ flowchart TD
 
 ## Hardware
 
-| Node      | LAN IP          | Tailscale IP        | RAM   | Disk          | Role                 |
-| --------- | --------------- | ------------------- | ----- | ------------- | -------------------- |
-| rpi-1005  | 192.168.1.74    | 100.64.0.1      | 16 GB | NVMe 457 GB   | root + Hermes        |
-| rpi-1006  | 192.168.1.77    | 100.64.0.2        | 16 GB | NVMe 457 GB   | worker               |
-| rpi-1007  | 192.168.1.75    | 100.64.0.3       | 16 GB | NVMe 457 GB   | worker               |
-| rpi-1008  | 192.168.1.76    | 100.64.0.4      | 16 GB | NVMe 457 GB   | worker               |
+| Node      | LAN IP          | RAM   | Disk          | Role                 |
+| --------- | --------------- | ----- | ------------- | -------------------- |
+| rpi-1005  | 192.168.1.74    | 16 GB | NVMe 457 GB   | root + Hermes        |
+| rpi-1006  | 192.168.1.77    | 16 GB | NVMe 457 GB   | worker               |
+| rpi-1007  | 192.168.1.75    | 16 GB | NVMe 457 GB   | worker               |
+| rpi-1008  | 192.168.1.76    | 16 GB | NVMe 457 GB   | worker               |
 
 Per-node specs: Broadcom BCM2712 (4x Cortex-A76 @ 2.4 GHz, ARMv8.2-A with FP16 and DOTPROD), 16 GB LPDDR4X (~17 GB/s bandwidth), NVMe PCIe Gen 2 (~700 MB/s), Gigabit Ethernet (0.226 ms intra-cluster latency), Debian 13 trixie, kernel 6.12.75 aarch64. No usable GPU/NPU for LLM compute on this platform.
 
@@ -531,7 +530,7 @@ Verification: the compiled `dllama` binary contains **322 dotprod instructions**
 |   +- dllama_proxy.py                Python OpenAI-compatible proxy
 +- docs/
     +- FAILED-ATTEMPTS.md             everything we tried and why it failed
-    +- SUBAGENT-RESEARCH.md           consolidated subagent findings
+    +- RESEARCH-CONSOLIDATED.md       consolidated research findings
 ```
 
 ---

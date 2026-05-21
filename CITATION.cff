@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: >-
+  Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster:
+  an empirical evaluation of frameworks, optimisations and failure
+  modes for edge LLM serving
+authors:
+  - family-names: "Correa Villa"
+    given-names: "Daniel"
+version: "1.0.0"
+date-released: "2026-05-21"
+license: MIT
+url: "https://github.com/danielcorrea-hellomatik/distributed-llama"
+repository-code: "https://github.com/danielcorrea-hellomatik/distributed-llama"
+keywords:
+  - distributed-inference
+  - edge-llm
+  - raspberry-pi-5
+  - mixture-of-experts
+  - tensor-parallelism
+  - arm-cortex-a76
+  - bit-exact-optimization
+abstract: >-
+  A production-grade distributed inference cluster running Qwen3-30B-A3B
+  (Mixture of Experts, Q40) at ~14.3-14.4 tokens/second sustained on 4x
+  Raspberry Pi 5 16GB, built on a patched fork of distributed-llama
+  v0.16.5. The work documents twelve source-level fixes, ARM-specific
+  compiler flags, kernel/network tuning and a WFE/SEV barrier, all
+  validated bit-exact (SHA-256 of deterministic output) against the
+  unoptimised baseline, with n=20-40 benchmarks and 95% confidence
+  intervals. It also catalogues the failure modes (frameworks and
+  techniques tried and rejected with measurements) that define the
+  practical ceiling of CPU-only MoE inference on ARM SBC hardware.
