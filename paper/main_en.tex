@@ -330,7 +330,7 @@ The most impactful optimisation was the migration from \textbf{Llama 3.1 8B} (de
 
 \subsection{Final-configuration throughput and stability}
 
-The final sustained throughput is \textbf{14.449~tok/s} (cold-cluster, $n$=20 paired runs of 250 tokens each, 95\% CI $\pm$0.038, best individual run 14.557~tok/s), reached at Stage~15 through the optimisation trajectory of Section~\ref{subsec:trajectory} (Table~\ref{tab:final-config}). The detailed run-to-run distribution, TTFT and response-length characterisation that follow were captured at the \emph{Stage~6 intermediate snapshot} (12.708~tok/s sustained); they document the cluster's run-to-run stability and latency profile, which the later Stage~9--15 optimisations raised in throughput without changing the qualitative latency behaviour. Each distribution is reported at the snapshot where it was measured rather than restated at the final configuration.
+The final result, on the \emph{decode} metric that the public ceiling reports, is \textbf{15.143~tok/s} (Stage~17 clean-room replication of b4rtaz~\#255, $n$=20, 95\% CI $\pm$0.097, telemetry off; Section~\ref{sec:cleanroom-2026-05-22}), \textbf{+16.1\%} above the 13.04~tok/s ceiling. The end-to-end \emph{sustained} serving throughput (250-token responses, prefill included) is \textbf{14.449~tok/s} (cold-cluster, $n$=20 paired runs, 95\% CI $\pm$0.038, best individual run 14.557~tok/s), reached at Stage~15 through the optimisation trajectory of Section~\ref{subsec:trajectory} (Table~\ref{tab:final-config}); the two are consistent, as 15.143~tok/s of decode amortises to $\approx$14.5~tok/s once the $\sim$557~ms prefill is included. The detailed run-to-run distribution, TTFT and response-length characterisation that follow were captured at the \emph{Stage~6 intermediate snapshot} (12.708~tok/s sustained); they document the cluster's run-to-run stability and latency profile, which the later Stage~9--15 optimisations raised in throughput without changing the qualitative latency behaviour. Each distribution is reported at the snapshot where it was measured rather than restated at the final configuration.
 
 \begin{table}[H]
 \centering
@@ -564,7 +564,7 @@ $\Delta$ vs.\ public ceiling (13.04) & --- & +7.45\% \\
 The same research round surfaced two further claims, both investigated and rejected:
 
 \begin{enumerate}[nosep]
-  \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} months earlier. Cannot be captured twice.
+  \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} (2026-05-16), two days before this research round. Cannot be captured twice.
   \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error in the surveyed material and is documented here as a cautionary tale.
 \end{enumerate}
 
@@ -580,7 +580,7 @@ The structured research round produced a ranked plan of further candidates:
   \item \textbf{Tier 5 --- REAP 25\% expert pruning} (Cerebras), offline, 0 dllama LOC; estimated +15--25\%, requires quality validation.
 \end{itemize}
 
-\textbf{Updated bottom line.} Sustained throughput is now \textbf{14.011 tok/s} ($\pm$0.051 at 95\% CI, $n$=20), \textbf{+7.45\% above the publicly documented ceiling} of 13.04 tok/s for this hardware class (Qwen3-30B-A3B Q40 on 4$\times$Pi 5).
+\textbf{Bottom line at Stage 9 (mid-investigation snapshot).} At this point sustained throughput was \textbf{14.011 tok/s} ($\pm$0.051 at 95\% CI, $n$=20), +7.45\% above the 13.04 ceiling. This was the value at Stage 9; Stages 10--15 later raised sustained throughput to 14.449~tok/s, and the Stage~17 clean-room replication establishes the final decode result of \textbf{15.143~tok/s} (+16.1\% vs ceiling, Section~\ref{sec:cleanroom-2026-05-22}).
 
 
 
@@ -705,12 +705,12 @@ branch-misses & 0.07\% & --- \\
 
 The 49\% backend-stall rate confirms the cluster is \textbf{DRAM-bandwidth-bound}: the CPUs wait on memory roughly half the time. The 3.16$\times$ write-to-read ratio reflects the multi-pass intermediate-buffer pattern in the MoE FFN, of which the A2 op-fusion (Stage 10) already cuts 224 barriers/token. The TLB miss rates ($<$0.1\%) and branch-mispredict rates ($<$0.1\%) confirm that the existing 16~KB-page configuration is already optimal --- transparent hugepages would not help (and are not compiled into Pi OS 6.12 in any case). On the compute side, \texttt{objdump} disassembly of the hot matmul shows 322 \texttt{udot}/\texttt{sdot} NEON dot-product instructions in the inner loop at an IPC of 1.74: the kernel is already vectorised to the ARMv8.2-A dot-product ISA limit. This is why every compute-side experiment in Table~\ref{tab:litsurvey} returns zero gain --- the cores sit idle waiting on DRAM rather than starved of issue slots.
 
-\subsubsection{Final cluster state and benchmark}
+\subsubsection{Cluster state and benchmark after Stage 11}
 
 \begin{table}[H]
 \centering
 \small
-\caption{Final benchmark, cold-cluster, $n$=20 paired runs.}
+\caption{Stage~11 benchmark (mid-investigation snapshot), cold-cluster, $n$=20 paired runs. Superseded by Stages~12--15 (14.449~tok/s sustained) and the Stage~17 clean-room decode result (15.143~tok/s).}
 \begin{tabular}{lr}
 \toprule
 \textbf{Metric} & \textbf{Value} \\
@@ -865,7 +865,7 @@ Stage 9 $\to$ Stage 10 & 14.011      & 14.081      & $+$0.070       &  2.4   & $
 Stage 11 $\to$ Stage 13 & 14.046      & 14.270      & $+$0.224       &  9.0   & $<0.001$ \\
 Stage 13 $\to$ Stage 14 & 14.270      & 14.449      & $+$0.179       &  7.5   & $<0.001$ \\
 Stage 8 $\to$ Stage 15  & 13.720      & 14.449      & $+$0.729       & 51.9   & $\ll 0.001$ \\
-b4rtaz \#255 $\to$ Stage 15 & 13.04   & 14.449      & $+$1.409       & ---    & N/A (different cluster) \\
+b4rtaz \#255 $\to$ Stage 17 (decode) & 13.04   & 15.143      & $+$2.103       & ---    & N/A (different cluster) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -960,7 +960,7 @@ A natural question for memory-bound inference --- whether one can read only the 
 \toprule
 \textbf{Setup} & \textbf{tok/s (Llama 8B class)} & \textbf{Cost (approx.)} \\
 \midrule
-4$\times$ Pi 5 16GB + \texttt{dllama} MoE \textbf{(this work, Stage~15)} & \textbf{14.449} & $\sim$500 \euro \\
+4$\times$ Pi 5 16GB + \texttt{dllama} MoE \textbf{(this work, decode)} & \textbf{15.143} & $\sim$500 \euro \\
 1$\times$ Mac Mini M4 8GB + MLX & 25 & 599 USD \\
 1$\times$ NVIDIA Jetson Orin Nano Super & 21.75 & 249 USD \\
 1$\times$ desktop + RTX 3060 12GB & $\sim$40 & $\sim$700 \euro \\
@@ -1122,7 +1122,7 @@ The most consequential lesson at this intermediate snapshot, in our view, is tha
 \vfill
 \begin{center}
 \rule{0.6\textwidth}{0.4pt}\\[0.3cm]
-\small\itshape Document generated 18 May 2026 from the operational cluster. Hellomatik · Raspberry Pi Cluster Lab. Final throughput 14.449 tok/s sustained, +10.81\% above public ceiling.
+\small\itshape Document generated 22 May 2026 from the operational cluster. Hellomatik · Raspberry Pi Cluster Lab. Final result 15.143 tok/s decode, +16.1\% above the public ceiling (14.449 tok/s end-to-end sustained).
 \end{center}
 
 \end{document}
