@@ -41,8 +41,8 @@
 % Captions — small, italic, no colour
 \usepackage[font=small,labelfont=bf,labelsep=period,justification=justified]{caption}
 
-% Hyperref — clean, no boxes, no colour by default
-\usepackage[hidelinks,breaklinks=true,bookmarks=true,bookmarksopen=true,unicode=true]{hyperref}
+% Hyperref — blue links (OpenAI system-card style); colour set after xcolor below
+\usepackage[breaklinks=true,bookmarks=true,bookmarksopen=true,unicode=true]{hyperref}
 
 % Code listings — minimal, monospace, no background
 \usepackage{listings}
@@ -68,6 +68,10 @@
 \definecolor{warn}{RGB}{170,120,30}
 \definecolor{err}{RGB}{150,40,40}
 \definecolor{codebg}{RGB}{248,248,248}
+
+% Blue hyperlinks (OpenAI system-card style)
+\definecolor{linkblue}{RGB}{0,0,190}
+\hypersetup{colorlinks=true,linkcolor=linkblue,citecolor=linkblue,urlcolor=linkblue}
 
 % Section headings — clean bold, no colour (OpenAI/NeurIPS style)
 \usepackage{titlesec}
@@ -103,8 +107,27 @@
 
 \begin{document}
 
-\maketitle
-\thispagestyle{empty}
+% ---- Title page (system-card style: title alone, page 1) ----
+\thispagestyle{plain}
+\vspace*{3.5cm}
+\begin{center}
+  {\LARGE 30 Billion Parameters on Four Raspberry Pis\par}
+  \vspace{0.35cm}
+  {\large A Bit-Exact Empirical Study of CPU-Only\\[0.15cm]
+   Mixture-of-Experts Inference at the Edge\par}
+  \vspace{1.4cm}
+  {\normalsize Daniel Correa Villa\par}
+  \vspace{0.2cm}
+  {\small Hellomatik --- Raspberry Pi Cluster Lab\par}
+  \vspace{1.0cm}
+  {\small 21 May 2026\par}
+\end{center}
+\newpage
+
+% ---- Table of contents (page 2) ----
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
 
 \begin{abstract}
 \noindent
@@ -472,7 +495,7 @@ Prefill rate degrades slightly with prompt size (KV-cache growth and the attenti
 \node[red,font=\scriptsize] at (axis cs:{S9 TIER0},13.4) {public ceiling 13.04};
 \end{axis}
 \end{tikzpicture}
-\caption{Throughput evolution across the full optimisation sequence (11 measured stages, $n$=20 each). The architectural switch to a MoE model accounts for the largest single jump ($+$59\%); Stage~9 (kernel network tuning) breaks decisively above the publicly documented ceiling of 13.04 tok/s (dashed red line); Stage~14 (\texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB) is the largest single source-level win of the 2026-05-18 investigation. The final sustained throughput is 14.449 tok/s ($+$10.81\% over the public ceiling, $+$154\% over the unoptimised Llama-3.1-8B dense baseline).}
+\caption{Throughput evolution across the full optimisation sequence (11 measured stages, $n$=20 each). The architectural switch to a MoE model accounts for the largest single jump ($+$59\%); Stage~9 (kernel network tuning) breaks decisively above the publicly documented ceiling of 13.04 tok/s (dashed red line); Stage~14 (\texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB) is the largest single source-level win of the 2026-05-18 investigation. The final sustained throughput is 14.449 tok/s ($+$10.81\% over the public ceiling, $+$153\% over the unoptimised Llama-3.1-8B dense baseline).}
 \end{figure}
 
 \subsection{Memory and thermal behaviour}
