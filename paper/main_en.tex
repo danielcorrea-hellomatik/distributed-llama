@@ -98,9 +98,10 @@
   \end{quote}\vspace{6pt}%
 }
 
-\title{30 Billion Parameters on Four Raspberry Pis:\\[0.15cm]
-       A Bit-Exact Empirical Study of CPU-Only Mixture-of-Experts\\
-       Inference at the Edge}
+\title{Hitting the Memory Wall on Four Raspberry Pis:\\[0.15cm]
+       Bit-Exact 30B Mixture-of-Experts Inference at the Edge,\\
+       +16\% over the Public Record}
+\hypersetup{pdftitle={Hitting the Memory Wall on Four Raspberry Pis: Bit-Exact 30B Mixture-of-Experts Inference at the Edge},pdfauthor={Daniel Correa Villa}}
 \author{Daniel Correa Villa\\
   \small Hellomatik --- Raspberry Pi Cluster Lab}
 \date{21 May 2026}
@@ -111,10 +112,10 @@
 \thispagestyle{plain}
 \vspace*{3.5cm}
 \begin{center}
-  {\LARGE 30 Billion Parameters on Four Raspberry Pis\par}
-  \vspace{0.35cm}
-  {\large Bit-Exact CPU-Only Mixture-of-Experts Inference at 15.1 tok/s,\\[0.15cm]
-   16\% Above the Public Record\par}
+  {\LARGE Hitting the Memory Wall on Four Raspberry Pis\par}
+  \vspace{0.4cm}
+  {\large Bit-Exact 30B Mixture-of-Experts Inference at the Edge,\\[0.15cm]
+   $+$16\% over the Public Record\par}
   \vspace{1.4cm}
   {\normalsize Daniel Correa Villa\par}
   \vspace{0.2cm}
@@ -146,7 +147,7 @@ Edge inference of large language models on consumer single-board computers (SBCs
 The investigation comprised three intertwined tracks: (i)~architectural exploration (which framework, model, and quantisation), which converged on \texttt{distributed-llama} + Qwen3-30B-A3B Q40 and established the operational baseline of 11.40~tok/s; (ii)~production-branch source-level work (Stages~1--8, 7.18 $\to$ 13.720~tok/s), driven primarily by the Stage~4 switch from Llama~3.1~8B to Qwen3-MoE ($+$59\%) plus the F0/F1/F2 \texttt{distributed-llama} patches; and (iii)~the bit-exact refinement work documented in detail here (Stages~9--15, 13.720 $\to$ 14.449~tok/s; $+$5.31\% over the pre-investigation production baseline, $+$26.75\% over the original Qwen3 measurement, and $+$10.81\% over the publicly documented ceiling of 13.04~tok/s set by Tadych~\cite{dllama_discussion255} on the same model and hardware class). Five hard constraints were progressively discovered and adopted as design rules: \emph{bit-exact output preservation} (SHA-256 of the first 100 generated token-ids must match a fixed pre-stage reference at \texttt{seed=42}, \texttt{temperature=0}); \emph{no kernel rebuild} (Pi OS stock kernel 6.12.75); \emph{no model change} (Qwen3-30B-A3B Q40 is fixed); \emph{no CPU overclock} (silicon stays at the nominal 2.4~GHz); and \emph{no reduction in model quality} (top-$k$ unchanged at 8, no Q3 down-quantisation, no expert pruning). These constraints rule out most speedup techniques in the recent literature \cite{li2025prima,halo2026}, but they make the surviving optimisations production-deployable with no risk of quality regression.
 
 \textbf{Contributions of this report.}
-\begin{enumerate}[leftmargin=*,nosep]
+\begin{enumerate}[nosep]
   \item We characterise the bottleneck of CPU-only distributed inference on Pi~5 in terms of memory bandwidth and synchronisation overhead, confirmed by ARM PMU profiling (49\% backend-stalled cycles, 11.4~GB/s sustained DRAM traffic per node out of a $\sim$17~GB/s theoretical ceiling; per-token sync overhead $\sim$12.3~ms = 17.7\% of token time).
   \item We develop and apply \textbf{twelve} source-level changes to the \texttt{distributed-llama} framework (eight framework patches plus four bit-exact kernel and op-fusion optimisations) that fix critical bugs (uint8 overflow, JSON crash, header truncation), enable optimisation flags previously inaccessible, introduce a bit-exact \texttt{OP\_SILU\_MUL} kernel fusion (Stage~10) and a true single-pass version of the same kernel (Stage~13), invert a long-standing software-prefetch micro-optimisation in the matmul inner loop (Stage~12, the HW prefetcher of the Cortex-A76 turns out to be more efficient than the manual hints it was given), tune \texttt{MAX\_CHUNK\_SIZE} for the \texttt{writeMany}/\texttt{readMany} all-reduce loop (Stage~14, 4-fold reduction in \texttt{send()}/\texttt{recv()} syscall count), and ship a foundation for tile-level overlap of computation and communication for a future sprint.
   \item We design a kernel-level network and scheduler tuning bundle (Stage~9 \emph{TIER~0}: GRO off, expanded TCP buffers, low-swap, \texttt{busy\_poll}) and a runtime NIC tuning bundle (Stage~15: enlarged RX ring, Receive Flow Steering, deferred NAPI) --- the latter persisted as a new \texttt{systemd} unit \texttt{dllama-runtime-tweaks.service} --- and quantify the throughput contribution of each.
@@ -164,7 +165,7 @@ The investigation comprised three intertwined tracks: (i)~architectural explorat
 \end{figure}
 
 The state of the art for distributed CPU LLM inference falls into three approaches:
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item \textbf{Tensor parallelism} (\texttt{distributed-llama}~\cite{tadych2024}): the model is sliced horizontally across attention heads, requiring an all-reduce per layer. Used in this work.
   \item \textbf{Pipeline parallelism} (\texttt{llama.cpp} RPC, \texttt{prima.cpp}~\cite{li2025prima}): layers are partitioned by depth across nodes, communication is point-to-point. Geerling~\cite{geerling2025} reports a 25$\times$ regression vs.\ single-node for \texttt{llama.cpp} RPC, confirming the network-overhead-dominated regime.
   \item \textbf{Mixture-of-Experts (MoE)} models~\cite{jiang2024,qwen3}: a parameter-efficient architecture that activates a sparse subset of weights per token. Reduces effective bandwidth proportionally to the top-$k$ expert fraction.
@@ -178,22 +179,22 @@ Several comparable Pi~5 clusters appear in the literature. Tadych~\cite{tadych20
 \label{tab:related-work}
 \small
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{p{3.0cm}p{3.4cm}rp{2.4cm}p{3.0cm}}
+\begin{tabularx}{\textwidth}{p{2.5cm}p{3.0cm}r p{1.7cm} X}
 \toprule
-\textbf{System} & \textbf{Framework / approach} & \textbf{tok/s} & \textbf{Quality preservation} & \textbf{Notes} \\
+\textbf{System} & \textbf{Framework / approach} & \textbf{tok/s} & \textbf{Quality} & \textbf{Notes} \\
 \midrule
-\textbf{This work} (Stages 1--15) & \texttt{distributed-llama} + 12 patches + kernel/NIC tuning & \textbf{14.449} & bit-exact (SHA-256) & 4$\times$Pi~5 16~GB, this paper; +10.81\% vs Tadych ceiling \\
+\textbf{This work} (Stage 17) & \texttt{distributed-llama} + 12 patches + kernel/NIC tuning & \textbf{15.143} & bit-exact (SHA-256) & 4$\times$Pi~5 16~GB, this paper; decode metric, telemetry off; $+$16.1\% vs Tadych ceiling (sustained 14.449~tok/s) \\
 \midrule
-Tadych \#255 \cite{dllama_discussion255} & \texttt{distributed-llama} v0.16, default & 13.04 & bit-exact & 4$\times$Pi~5 8~GB, vanilla upstream \\
+Tadych \#255 \cite{dllama_discussion255} & \texttt{distributed-llama} v0.16, default & 13.04 & bit-exact & 4$\times$Pi~5 8~GB, vanilla upstream (decode) \\
 Seeed Studio \cite{seeed2025} & \texttt{distributed-llama} & 6.06 & bit-exact & 4$\times$Pi~5 8~GB, DeepSeek-R1-Distill-Llama-8B \\
 ByteShape \cite{byteshape2026} & \texttt{llama.cpp}, single node & 8.03 & bit-exact & 1$\times$Pi~5 16~GB, Q3\_K\_S 2.70 bpw \\
 Geerling \cite{geerling_aibench47} & \texttt{llama.cpp}, single node & 7.99 & bit-exact & 1$\times$Pi~5 16~GB, comparable quant \\
 Geerling RPC \cite{geerling2025} & \texttt{llama.cpp} RPC distributed & --- & bit-exact & Reported 25$\times$ regression vs.\ single-node on Pi clusters \\
-\texttt{prima.cpp} \cite{li2025prima} & pipelined ring + mmap & --- (n/a Pi~5) & bit-exact & ZMQ topology fails to bootstrap on Pi~5 in our testing \\
-HALO \cite{halo2026} & \texttt{distributed-llama} + 3{,}500 LOC overlap & 1.30$\times$ on reliable LAN (their hardware) & bit-exact & Source not yet public; reported speedup not independently verified here \\
-EXO \cite{exo2025} & MLX backend & --- (n/a Pi~5) & --- & Requires Apple MLX; not buildable on ARM Linux \\
+\texttt{prima.cpp} \cite{li2025prima} & pipelined ring + mmap & n/a & bit-exact & ZMQ topology fails to bootstrap on Pi~5 in our testing \\
+HALO \cite{halo2026} & \texttt{distributed-llama} + 3{,}500 LOC overlap & --- & bit-exact & 1.30$\times$ on reliable LAN (their hardware); source not yet public, speedup not independently verified here \\
+EXO \cite{exo2025} & MLX backend & n/a & --- & Requires Apple MLX; not buildable on ARM Linux \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~\cite{mlperf2025}, the vLLM benchmarking guide~\cite{kwon2023vllm}, and the disaggregated prefill/decode reporting introduced by DistServe~\cite{zhong2024distserve}.
@@ -219,7 +220,7 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 \end{table}
 
 \paragraph{Per-node specifications.}
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item SoC: Broadcom BCM2712 (4$\times$ Arm Cortex-A76 @ 2.4 GHz, ARMv8.2-A)
   \item Memory: 16 GB LPDDR4X @ 4267 MT/s, theoretical bandwidth $\approx$\textbf{17 GB/s}
   \item Storage: NVMe SSD via PCIe Gen 2 ($\approx$700 MB/s read)
@@ -256,7 +257,7 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 
 \subsection{Software stack}
 
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item \textbf{Inference engine}: \texttt{distributed-llama} v0.16.5 with eight framework patches (\S\ref{sec:patches}); four further bit-exact kernel and op-fusion optimisations follow in Stages~10--14.
   \item \textbf{Model}: Qwen3-30B-A3B Q40 (30B total parameters, 128 experts, top-$k$=8, $\sim$3B active per token).
   \item \textbf{HTTP front-end}: custom Python proxy (Flask + waitress) on \texttt{127.0.0.1:8000}, sanitising OpenAI-strict client requests.
@@ -270,7 +271,7 @@ We follow the MLPerf Inference v5.1 conventions~\cite{mlperf2025} for metric def
 
 \subsection{Metrics}
 
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item \textbf{Throughput (tok/s)}: generated tokens divided by total wall-clock time, including TTFT.
   \item \textbf{TTFT (Time-To-First-Token)}: latency from HTTP request to the first generated token, measured by issuing \texttt{max\_tokens=1}.
   \item \textbf{Prefill rate}: prompt tokens processed per second. Estimated as \texttt{prompt\_tokens / (total\_duration - decode\_time)}, where \texttt{decode\_time} is approximated from sustained-rate measurements.
@@ -311,7 +312,7 @@ We adopt the protocol recommended by MLPerf~\cite{mlperf2025}: \textbf{two warm-
 Recompiled with \texttt{CXXFLAGS="-O3 -flto -ffast-math -funroll-loops"} on each node. \texttt{LD\_PRELOAD=libjemalloc.so.2} added to all \texttt{systemd} units with \texttt{MALLOC\_CONF="narenas:4,tcache:true,dirty\_decay\_ms:30000"}.
 
 \subsection{Operating-system tuning}
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item CPU governor \texttt{performance} on all 4 nodes (\texttt{systemd} unit at boot).
   \item TCP BBR congestion control; \texttt{net.ipv4.tcp\_low\_latency=1}; \texttt{net.core.netdev\_budget=600}.
   \item \texttt{vm.overcommit\_memory=1}, \texttt{vm.swappiness=1} (lowered from the Pi~OS default of 60 in Stage~9 to keep \texttt{mlock}-ed weights resident; verified live at 1).
@@ -562,7 +563,7 @@ $\Delta$ vs.\ public ceiling (13.04) & --- & +7.45\% \\
 
 The same research round surfaced two further claims, both investigated and rejected:
 
-\begin{enumerate}[leftmargin=*,nosep]
+\begin{enumerate}[nosep]
   \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} months earlier. Cannot be captured twice.
   \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error in the surveyed material and is documented here as a cautionary tale.
 \end{enumerate}
@@ -571,7 +572,7 @@ The same research round surfaced two further claims, both investigated and rejec
 
 The structured research round produced a ranked plan of further candidates:
 
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item \textbf{Tier 2 --- Close Phase B (Option C, $\sim$40 LOC)}: the \texttt{opt-b5b6-tiled-sync} branch carries 562 LOC of async-sync orchestrator, tiled matmul wrapper, and the \texttt{--tile-sync K} flag, all compiled but unwired. Estimated additional +5--12\%; high integration risk (the same code path that broke the cluster during PGO and \texttt{isolcpus} experiments).
   \item \textbf{Tier 3a --- Hierarchical 2-stage all-reduce}: with $N=4$ nodes, butterfly recursive-halving needs $\log_2(4)=2$ rounds instead of the $2(N-1)=6$ rounds of the current ring. Estimated +10--13\%, $\sim$80--120 LOC.
   \item \textbf{Tier 3b --- Pre-attention expert prediction} (arXiv:2511.10676): specific to Qwen3-30B-A3B, reported 94.69\% top-$k$ accuracy. Estimated +8--15\%, $\sim$250 LOC, low risk (fallback to on-demand load).
@@ -597,7 +598,7 @@ The Qwen3-MoE per-expert FFN ops are $w_1$-matmul $\to$ $w_3$-matmul $\to$ silu(
 \subsection{Stage 11 --- Rounds 3 and 4 (Linux papers research and ceiling investigation)}
 
 We carried out four parallel research threads:
-\begin{enumerate}[leftmargin=*,nosep]
+\begin{enumerate}[nosep]
   \item Linux Plumbers / SOSP / OSDI / EuroSys / USENIX ATC papers 2024--2026.
   \item eBPF / XDP / AF\_XDP / io\_uring / kernel-bypass.
   \item Linux scheduler (EEVDF in 6.6+) tunings.
@@ -679,7 +680,7 @@ We called \texttt{sched\_setattr()} at the start of \texttt{executorWorkerLoop} 
 \label{fig:bottleneck}
 \end{figure}
 
-ARM PMU profiling (\texttt{perf stat -e l2d\_cache\_refill,l2d\_cache\_wb,bus\_access,stalled-cycles-backend,cpu-cycles,instructions} for 60 s during sustained inference):
+ARM PMU profiling (\texttt{perf stat -e l2d\_cache\_refill,\allowbreak l2d\_cache\_wb,\allowbreak bus\_access,\allowbreak stalled-cycles-backend,\allowbreak cpu-cycles,\allowbreak instructions} for 60 s during sustained inference):
 
 \begin{table}[H]
 \centering
@@ -797,7 +798,7 @@ The \texttt{writeMany}/\texttt{readMany} loop in \texttt{nn-network.cpp} capped 
 \paragraph{Stage 15 --- Runtime kernel tweaks persisted via systemd (commit \texttt{edbc4ce}).}
 Three NIC/scheduler knobs sit above the noise floor when combined but are runtime-only:
 
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item RX ring buffer 512 $\rightarrow$ 4096 (\texttt{ethtool -G eth0 rx 4096 tx 2048}).
   \item Receive Flow Steering with \texttt{rps\_cpus=0xe} (CPU 1--3), \texttt{rps\_flow\_cnt=4096}, \texttt{net.core.rps\_sock\_flow\_entries=32768} --- spreads softirq RX off CPU 0.
   \item \texttt{napi\_defer\_hard\_irqs=2} + \texttt{gro\_flush\_timeout=20us} for low-latency NAPI batching.
@@ -968,7 +969,7 @@ A natural question for memory-bound inference --- whether one can read only the 
 \end{table}
 
 \subsection{Limitations}
-\begin{enumerate}[leftmargin=*,nosep]
+\begin{enumerate}[nosep]
   \item Energy efficiency was not measured directly. An external USB power meter (e.g.\ UM34C) is required for accurate measurement; the \texttt{vcgencmd pmic\_read\_adc} interface does not capture the full 5 V rail.
   \item Prefill is severe ($\sim$2 min for 2K-token prompts, projected $\sim$20 min for 20K), making the system unsuitable for agentic workloads with large system prompts. Speculative decoding (Llama 3.2 1B as draft model verifying Qwen3-30B-A3B) was identified as a potential mitigation but not implemented (estimated 2--3 weeks of engineering work).
   \item Throughput was measured single-client. Multi-client goodput under SLO~\cite{zhong2024distserve} was not characterised.
@@ -982,7 +983,7 @@ Concurrently with this work, Zheng \emph{et al.}~\cite{halo2026} introduced HALO
 \subsection{Future work: alternative model candidates}
 \label{sec:future-models}
 For applications prioritising Hermes Agent compatibility, two candidates stand out:
-\begin{itemize}[leftmargin=*,nosep]
+\begin{itemize}[nosep]
   \item \textbf{Llama-3-Groq-8B-Tool-Use}~\cite{groq2024tooluse}: dense 8B model fine-tuned for function calling, achieving 89.06\% on the Berkeley Function-Calling Leaderboard (BFCL). Projected throughput $\sim$14.5 tok/s.
   \item \textbf{OLMoE-1B-7B}~\cite{muennighoff2024olmoe}: smaller MoE (7B total / 1B active), projected to reach $\sim$19.6 tok/s on this hardware. Tool-calling accuracy untested.
 \end{itemize}
@@ -1029,6 +1030,8 @@ On the decode metric used by the public ceiling, the cluster reaches \textbf{15.
 The two most consequential bit-exact source-level wins of the 2026-05-18 investigation run counter to received wisdom on the same code base: (i) removing the \texttt{\_\_builtin\_prefetch} calls from the matmul inner loop yields a measurable improvement, because the Cortex-A76's hardware-prefetcher stride detector outperforms the manual hints (Stage~12); and (ii) the previous SILU+MUL fusion (Stage~10) was a thin two-call wrapper that kept the intermediate result resident in memory, so rewriting it as a single-pass NEON loop that holds the values in registers throughout achieves $+1.5\%$ at no quality cost (Stage~13). Both are reminders that ``well-known'' micro-optimisations on a hot kernel should be re-measured against the specific microarchitecture rather than carried forward from older platforms.
 
 The single remaining software direction we have identified as likely to lift sustained throughput further within the bit-exact constraint is wiring the Phase~B Async-TP foundation already shipped in the repository (Section~\ref{sec:future-work-halo}--Future Work). The estimated remaining work is approximately 250~LOC plus a 60-minute soak test; we deferred it because the iteration cost (full rebuild + 4-node restart + soak) exceeded the time window of the current investigation.
+
+Taken together, these results drive a four-node Raspberry Pi~5 cluster to the physical ceiling of its LPDDR4X memory subsystem. At 49\% backend-stalled cycles and roughly 11.4 of the $\sim$17~GB/s vendor bandwidth realised per node, decode is memory-bandwidth-bound: the bytes moved per token are fixed by the model and its quantisation, and no further bit-exact \emph{reduction} of that traffic is available --- the one lever left (Async-TP) overlaps communication with computation rather than moving fewer bytes. The telemetry experiment of Section~\ref{sec:cleanroom-2026-05-22} sharpens the point: even the few percent of DRAM bandwidth consumed by a background monitoring agent is directly visible in the decode rate, while the compute-bound prefill phase is untouched. We have, in short, reached the \emph{memory wall} that the Raspberry~Pi~5 presents. To our knowledge, \textbf{15.143~tok/s} is the highest rate at which a 30-billion-parameter Mixture-of-Experts model has been driven on this hardware class --- bit-exact, with no overclock and no loss of output quality. Pushing past it is no longer a software problem but a silicon one: it requires memory with more bandwidth.
 
 \subsection{Future work}
 
