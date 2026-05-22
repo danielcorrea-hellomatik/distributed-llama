@@ -38,10 +38,11 @@ def save(fig, name):
 # ---- Fig 1: optimisation trajectory ----
 labels=["Llama 3.1 8B\n(dense)","Qwen3-30B\nMoE switch","max-seq-len\n+ swap clean",
         "Stage 8\npatches+flags","Stage 9\nTIER-0 sysctls","Stage 10\nSILU·MUL fuse",
-        "Stage 13\ntrue 1-pass","Stage 14-15\nchunk+NIC"]
-vals=[5.70,11.40,12.71,13.720,14.011,14.081,14.270,14.449]
-fig,ax=plt.subplots(figsize=(9,4.6))
-colors=[GREY,ACC,ACC,ACC,ACC,ACC,ACC,GOOD]
+        "Stage 13\ntrue 1-pass","Stage 14-15\nchunk+NIC\n(sustained)",
+        "Stage 17\nclean-room\n#255 decode"]
+vals=[5.70,11.40,12.71,13.720,14.011,14.081,14.270,14.449,15.143]
+fig,ax=plt.subplots(figsize=(9.8,4.7))
+colors=[GREY,ACC,ACC,ACC,ACC,ACC,ACC,ACC,GOOD]
 ax.bar(range(len(vals)),vals,color=colors,width=0.72,zorder=3)
 ax.axhline(13.04,ls="--",lw=1.3,color=WARN,zorder=2)
 ax.text(len(vals)-0.5,13.04+0.12,"public ceiling 13.04 tok/s (b4rtaz #255)",
@@ -49,8 +50,8 @@ ax.text(len(vals)-0.5,13.04+0.12,"public ceiling 13.04 tok/s (b4rtaz #255)",
 for i,v in enumerate(vals):
     ax.text(i,v+0.12,f"{v:.2f}",ha="center",va="bottom",fontsize=8.5,color=INK)
 ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels,fontsize=8)
-ax.set_ylabel("Sustained throughput (tok/s)"); ax.set_ylim(0,15.6)
-ax.set_title("Optimisation trajectory: Qwen3-30B-A3B on 4× Raspberry Pi 5",color=INK)
+ax.set_ylabel("tok/s"); ax.set_ylim(0,16.4)
+ax.set_title("Optimisation trajectory and final clean-room result\nQwen3-30B-A3B on 4× Raspberry Pi 5  (last bar: decode rate, telemetry off, +16.1% vs ceiling)",color=INK,fontsize=10.5)
 ax.grid(axis="y",ls=":",alpha=0.5,zorder=0)
 save(fig,"fig_trajectory")
 
@@ -94,13 +95,13 @@ save(fig,"fig_bottleneck")
 
 # ---- Fig 4: same-class comparison ----
 fig,ax=plt.subplots(figsize=(5.6,4.4))
-names=["b4rtaz #255\n(public ceiling)","This work\n(Stage 14-15)"]; v=[13.04,14.449]
+names=["b4rtaz #255\n(public ceiling)","This work\n(clean-room, decode)"]; v=[13.04,15.143]
 bars=ax.bar(names,v,color=[GREY,GOOD],width=0.55,zorder=3)
 for b,val in zip(bars,v): ax.text(b.get_x()+b.get_width()/2,val+0.1,f"{val:.2f}",ha="center",fontsize=11,color=INK)
-ax.annotate("+10.81%",xy=(1,14.449),xytext=(0.5,15.0),ha="center",color=GOOD,fontsize=12,
+ax.annotate("+16.1%",xy=(1,15.143),xytext=(0.5,15.9),ha="center",color=GOOD,fontsize=12,
             arrowprops=dict(arrowstyle="->",color=GOOD))
-ax.set_ylabel("Sustained throughput (tok/s)"); ax.set_ylim(0,16)
-ax.set_title("Same model & hardware class\nQwen3-30B-A3B Q40, 4× Raspberry Pi 5",color=INK,fontsize=11)
+ax.set_ylabel("Decode throughput (tok/s)"); ax.set_ylim(0,16.6)
+ax.set_title("Same model & hardware class, decode rate (n=20)\nQwen3-30B-A3B Q40, 4× Raspberry Pi 5",color=INK,fontsize=11)
 ax.grid(axis="y",ls=":",alpha=0.5,zorder=0)
 save(fig,"fig_comparison")
 

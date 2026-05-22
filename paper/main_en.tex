@@ -113,8 +113,8 @@
 \begin{center}
   {\LARGE 30 Billion Parameters on Four Raspberry Pis\par}
   \vspace{0.35cm}
-  {\large A Bit-Exact Empirical Study of CPU-Only\\[0.15cm]
-   Mixture-of-Experts Inference at the Edge\par}
+  {\large Bit-Exact CPU-Only Mixture-of-Experts Inference at 15.1 tok/s,\\[0.15cm]
+   16\% Above the Public Record\par}
   \vspace{1.4cm}
   {\normalsize Daniel Correa Villa\par}
   \vspace{0.2cm}
@@ -131,9 +131,9 @@
 
 \begin{abstract}
 \noindent
-A 30-billion-parameter Mixture-of-Experts language model (Qwen3-30B-A3B) runs on four Raspberry Pi~5 boards --- roughly \euro500 of CPU-only hardware, no GPU or NPU --- at \textbf{14.449~tok/s} sustained, bit-exact and \textbf{+10.81\%} above the highest publicly documented result for this model and hardware class. We report the design, optimisation and rigorous benchmarking of a four-node Raspberry Pi~5 (16~GB) cluster for distributed inference of this 30B-parameter Mixture-of-Experts (MoE) model (3B active parameters per token, top-8 of 128 experts) over Gigabit Ethernet. The study passes through two baselines: an initial \textbf{Llama~3.1~8B dense baseline at 5.70~tok/s} (later abandoned as architecturally unsuited to the Pi~5 LPDDR4X memory subsystem), and the \textbf{Qwen3-30B-A3B MoE baseline at 11.40~tok/s} (Stage~4, the first measurement after the model switch), which becomes the operational starting point for the optimisation work proper. Framework alternatives proved infeasible on ARM Linux without GPU/NPU acceleration (EXO requires Apple MLX; prima.cpp hangs on ZMQ topology discovery; llama.cpp RPC regresses 25$\times$), so we adopt \texttt{distributed-llama} v0.16.5 with twelve source-level changes developed in this work --- eight framework patches plus four bit-exact kernel and op-fusion optimisations --- and persistent runtime kernel tuning.
+A 30-billion-parameter Mixture-of-Experts language model (Qwen3-30B-A3B) runs on four Raspberry Pi~5 boards --- roughly \euro500 of CPU-only hardware, no GPU or NPU --- at \textbf{15.143~tok/s} decode, bit-exact and \textbf{+16.1\%} above the highest publicly documented result for this model and hardware class (13.04~tok/s; b4rtaz~\#255); end-to-end sustained serving throughput, including prefill, is 14.449~tok/s. We report the design, optimisation and rigorous benchmarking of a four-node Raspberry Pi~5 (16~GB) cluster for distributed inference of this 30B-parameter Mixture-of-Experts (MoE) model (3B active parameters per token, top-8 of 128 experts) over Gigabit Ethernet. The study passes through two baselines: an initial \textbf{Llama~3.1~8B dense baseline at 5.70~tok/s} (later abandoned as architecturally unsuited to the Pi~5 LPDDR4X memory subsystem), and the \textbf{Qwen3-30B-A3B MoE baseline at 11.40~tok/s} (Stage~4, the first measurement after the model switch), which becomes the operational starting point for the optimisation work proper. Framework alternatives proved infeasible on ARM Linux without GPU/NPU acceleration (EXO requires Apple MLX; prima.cpp hangs on ZMQ topology discovery; llama.cpp RPC regresses 25$\times$), so we adopt \texttt{distributed-llama} v0.16.5 with twelve source-level changes developed in this work --- eight framework patches plus four bit-exact kernel and op-fusion optimisations --- and persistent runtime kernel tuning.
 
-Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, sustained throughput rises from the 11.40~tok/s Qwen3 baseline to \textbf{14.449~tok/s} ($n$=20 paired benchmark, 95\% CI $\pm$0.038, best individual run 14.557~tok/s) --- a \textbf{+26.75\% gain attributable to the source and kernel-level optimisation work itself}, and \textbf{+10.81\%} above the highest previously documented public configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255). Relative to the Stage~8 baseline (13.720~tok/s, the last pre-investigation measurement of the production branch) the gain is \textbf{+5.31\%}, contributed by operating-system tuning, MoE op-fusion, a network chunk-size sweep, runtime NIC tuning, and the inversion of a counter-productive software prefetch documented herein (paired Welch's $t$=51.9, $p\!\ll\!0.001$). A subsequent bit-exact micro-optimisation (Stage~16, a WFE/SEV inter-step barrier replacing the busy-spin) adds a further \textbf{+0.48\%} in a same-session cold paired A/B (14.261~$\to$~14.329~tok/s, Welch's $t$=2.45, $p$=0.014, $n$=40 per arm), and an API robustness fix eliminates an intermittent crash on client disconnect; both ship with a one-command bit-exact verification script.
+Across fifteen incremental optimisation stages, each validated bit-exact against a fixed reference output via SHA-256 of the generated token-id sequence, sustained throughput rises from the 11.40~tok/s Qwen3 baseline to \textbf{14.449~tok/s} ($n$=20 paired benchmark, 95\% CI $\pm$0.038, best individual run 14.557~tok/s) --- a \textbf{+26.75\% gain attributable to the source and kernel-level optimisation work itself}, and \textbf{+10.81\%} above the highest previously documented public configuration for this model and hardware class (13.04~tok/s; b4rtaz~\#255). On the \emph{decode} metric the public ceiling actually reports --- the strictly apples-to-apples comparison --- the corresponding figure is \textbf{15.143~tok/s} ($n$=20, telemetry off), \textbf{+16.1\%} above the ceiling (the Stage~17 clean-room replication, \S\ref{sec:cleanroom-2026-05-22}). Relative to the Stage~8 baseline (13.720~tok/s, the last pre-investigation measurement of the production branch) the gain is \textbf{+5.31\%}, contributed by operating-system tuning, MoE op-fusion, a network chunk-size sweep, runtime NIC tuning, and the inversion of a counter-productive software prefetch documented herein (paired Welch's $t$=51.9, $p\!\ll\!0.001$). A subsequent bit-exact micro-optimisation (Stage~16, a WFE/SEV inter-step barrier replacing the busy-spin) adds a further \textbf{+0.48\%} in a same-session cold paired A/B (14.261~$\to$~14.329~tok/s, Welch's $t$=2.45, $p$=0.014, $n$=40 per arm), and an API robustness fix eliminates an intermittent crash on client disconnect; both ship with a one-command bit-exact verification script.
 
 ARM PMU profiling confirms that the residual bottleneck is LPDDR4X memory bandwidth (49\% backend-stalled cycles, 11.4~GB/s sustained per node out of an approximate 17~GB/s ceiling). We catalogue twenty-six unsuccessful configurations and rejected hypotheses, document the empirical constraint-discovery process (strict bit-exact, no kernel rebuild, no model change, no overclock) that progressively narrowed the design space, and identify a single class of bit-exact software optimisation likely to lift sustained throughput further (\emph{Async Tensor Parallelism}; an estimated 250~LOC integration on the Phase~B foundation already shipped in the repository). Finally (Section~\ref{sec:cleanroom-2026-05-22}), a strict apples-to-apples replication of the public ceiling's \emph{decode-rate} metric --- the exact \#255 command, reading the \texttt{Prediction} field, \texttt{nTokens=109} on every run --- yields \textbf{15.143~tok/s} ($n$=20, 95\% CI $\pm$0.097, \textbf{+16.1\%} vs.\ 13.04). In the process we measure that co-located observability agents (Grafana Alloy, cAdvisor) tax this memory-bound decode by $+5.18\%$ while leaving compute-bound prefill unchanged --- a clean, confound-free corroboration on identical hardware that decode is bandwidth-bound.
 \end{abstract}
@@ -159,7 +159,7 @@ The investigation comprised three intertwined tracks: (i)~architectural explorat
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.56\linewidth]{fig_comparison.pdf}
-\caption{Same model and hardware class (Qwen3-30B-A3B Q40 on 4$\times$Raspberry Pi~5): this work versus the highest publicly documented result (b4rtaz~\#255), a bit-exact $+10.81\%$ improvement.}
+\caption{Same model and hardware class (Qwen3-30B-A3B Q40 on 4$\times$Raspberry Pi~5), \emph{decode} metric: this work versus the highest publicly documented result (b4rtaz~\#255), a bit-exact $+16.1\%$ improvement (15.143 vs.\ 13.04~tok/s, $n$=20, telemetry off).}
 \label{fig:comparison}
 \end{figure}
 
@@ -463,40 +463,10 @@ Prefill rate degrades slightly with prompt size (KV-cache growth and the attenti
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{fig_trajectory.pdf}
-\caption{Sustained throughput across the optimisation trajectory (Qwen3-30B-A3B Q40, 4$\times$Raspberry Pi~5). The dashed line marks the highest publicly documented result for this model and hardware class (13.04~tok/s, b4rtaz~\#255); the final Stage~14--15 configuration reaches 14.449~tok/s ($n$=20, 95\% CI $\pm$0.038). The Llama~3.1~8B dense bar is the abandoned starting point, shown for context.}
+\caption{Optimisation trajectory and final clean-room result (Qwen3-30B-A3B Q40, 4$\times$Raspberry Pi~5). Bars 1--8 report sustained throughput; the dashed line marks the public ceiling (13.04~tok/s, b4rtaz~\#255). The Stage~14--15 configuration reaches 14.449~tok/s sustained ($n$=20, 95\% CI $\pm$0.038); the final green bar is the Stage~17 clean-room \#255 replication on the \emph{decode} metric --- the quantity directly comparable to the ceiling --- at \textbf{15.143~tok/s} ($n$=20, 95\% CI $\pm$0.097, telemetry off), \textbf{+16.1\%} above the ceiling. The Llama~3.1~8B dense bar is the abandoned starting point, shown for context.}
 \label{fig:trajectory}
 \end{figure}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=14cm,height=7cm,
-  ybar,
-  bar width=22pt,
-  ylabel={\textbf{tokens / second}},
-  symbolic x coords={Baseline,{OS tuning},{8 patches},{Cleanup+mlock},{MoE switch},{S6 max-seq},{S9 TIER0},{S10 fusion},{S11 R3/4},{S14 chunk},{S15 final}},
-  xtick=data,
-  ymin=0,ymax=16,
-  ymajorgrids,
-  grid style={dashed,gray!30},
-  nodes near coords,
-  nodes near coords style={font=\bfseries\scriptsize,color=primary!80,rotate=70,anchor=west},
-  every node near coord/.append style={yshift=2pt},
-  enlarge x limits=0.08,
-  axis line style={primary!60},
-  x tick label style={rotate=35,anchor=east,font=\scriptsize},
-  width=15cm,height=7cm,
-]
-\addplot[fill=primary!30,draw=primary,thick] coordinates {
-  (Baseline,5.7) ({OS tuning},6.85) ({8 patches},7.18) ({Cleanup+mlock},7.01) ({MoE switch},11.4) ({S6 max-seq},12.71) ({S9 TIER0},14.011) ({S10 fusion},14.081) ({S11 R3/4},14.046) ({S14 chunk},14.449) ({S15 final},14.449)
-};
-\draw[red,dashed,thick] (axis cs:Baseline,13.04) -- (axis cs:{S15 final},13.04);
-\node[red,font=\scriptsize] at (axis cs:{S9 TIER0},13.4) {public ceiling 13.04};
-\end{axis}
-\end{tikzpicture}
-\caption{Throughput evolution across the full optimisation sequence (11 measured stages, $n$=20 each). The architectural switch to a MoE model accounts for the largest single jump ($+$59\%); Stage~9 (kernel network tuning) breaks decisively above the publicly documented ceiling of 13.04 tok/s (dashed red line); Stage~14 (\texttt{MAX\_CHUNK\_SIZE} 4 KB $\to$ 16 KB) is the largest single source-level win of the 2026-05-18 investigation. The final sustained throughput is 14.449 tok/s ($+$10.81\% over the public ceiling, $+$153\% over the unoptimised Llama-3.1-8B dense baseline).}
-\end{figure}
 
 \subsection{Memory and thermal behaviour}
 
@@ -1020,7 +990,7 @@ For applications prioritising Hermes Agent compatibility, two candidates stand o
 \section{Clean-room decode-rate replication and telemetry interference}
 \label{sec:cleanroom-2026-05-22}
 
-\textit{This section (added 22 May 2026) reports a strict apples-to-apples replication of the b4rtaz~\#255 benchmark and an unexpected finding about background-monitoring interference. For the specific purpose of comparison against the 13.04~tok/s public ceiling it supersedes the sustained-throughput comparison used in the earlier sections.}
+\textit{This section (added 22 May 2026) reports a strict apples-to-apples replication of the b4rtaz~\#255 benchmark and an unexpected finding about background-monitoring interference. For the specific purpose of comparison against the 13.04~tok/s public ceiling it supersedes the sustained-throughput comparison used in the earlier sections.} We designate this final clean-room benchmark \textbf{Stage~17}: the deployed bit-exact configuration re-measured with background telemetry stopped and the metric aligned to the \emph{decode} rate the public ceiling reports. It is the headline result of this paper --- \textbf{15.143~tok/s, $+$16.1\% above the ceiling} --- and the last point in the trajectory of Figure~\ref{fig:trajectory}.
 
 \subsection{Motivation: metric alignment with the public ceiling}
 The headline 14.449~tok/s reported above is a \emph{sustained-throughput} figure (total generated tokens divided by total wall-clock time over 250-token responses, prefill included), measured with the project's \texttt{academic\_bench.py} harness. The public ceiling of 13.04~tok/s (Tadych~\#255~\cite{dllama_discussion255}), by contrast, is a pure \emph{decode-rate} (``Prediction'') figure: the steady-state token-generation rate reported by \texttt{dllama inference}, excluding the prefill (``Evaluation'') phase. Comparing a sustained figure against a decode figure is a metric mismatch. To eliminate it, we re-ran the \emph{exact} command published in~\#255 --- identical prompt, \texttt{--steps 128}, \texttt{--buffer-float-type q80}, \texttt{--max-seq-len 4096} --- on our cluster, read the same \texttt{Prediction tokens/s} field b4rtaz reports, and verified the same generation length (\texttt{nTokens=109}) on every run as an integrity check. The only deliberate differences from~\#255 are our optimisation configuration (\texttt{--nthreads 3} instead of 4, \texttt{jemalloc}, IRQ/RPS pinned to CPU~3, \texttt{SDRAM\_BANKLOW=1} in the bootloader EEPROM, and the \texttt{performance} governor) and the 16~GB SKU (vs.\ b4rtaz's 8~GB). The build is \texttt{dllama-custom} at commit \texttt{9bd3b3b}, with \texttt{mlock}-ed weights ($\sim$4.45~GB \texttt{VmLck} per worker, verified).
@@ -1054,7 +1024,7 @@ We attempted a further bit-exact decode optimisation, T0.1, that removes the per
 
 \label{sec:final-conclusion}
 
-The cluster sustains \textbf{14.449 tok/s} ($\pm$0.038 at 95\% CI, $n$=20 paired, cold-cluster; best individual run 14.557~tok/s), \textbf{+10.81\% above the publicly documented ceiling} of 13.04~tok/s for Qwen3-30B-A3B Q40 on $4\times$Pi~5 (Tadych~\cite{dllama_discussion255}). The Stage~12--15 commits of the 2026-05-18 investigation (\texttt{64ef787}, \texttt{1af175c}, \texttt{f8ed9d2}, \texttt{edbc4ce}), combined with the post-publication updates of Stages~9--11 (\texttt{d50d30c}, \texttt{106eab3}, \texttt{162cd83}, \texttt{850d1e1}), represent a $+5.31\%$ improvement over the original Stage~8 baseline of 13.720~tok/s and a maintainable, fully bit-exact production state. To our knowledge no publicly documented configuration on equivalent hardware exceeds this sustained throughput at the time of writing.
+On the decode metric used by the public ceiling, the cluster reaches \textbf{15.143 tok/s} ($\pm$0.097 at 95\% CI, $n$=20, telemetry off; the Stage~17 clean-room replication of b4rtaz~\#255), \textbf{+16.1\% above the publicly documented ceiling} of 13.04~tok/s for Qwen3-30B-A3B Q40 on $4\times$Pi~5 (Tadych~\cite{dllama_discussion255}); end-to-end sustained serving throughput (prefill included) is 14.449~tok/s ($\pm$0.038 at 95\% CI, $n$=20 paired, cold-cluster; best individual run 14.557~tok/s). The Stage~12--15 commits of the 2026-05-18 investigation (\texttt{64ef787}, \texttt{1af175c}, \texttt{f8ed9d2}, \texttt{edbc4ce}), combined with the post-publication updates of Stages~9--11 (\texttt{d50d30c}, \texttt{106eab3}, \texttt{162cd83}, \texttt{850d1e1}), represent a $+5.31\%$ improvement over the original Stage~8 baseline of 13.720~tok/s and a maintainable, fully bit-exact production state. To our knowledge no publicly documented configuration on equivalent hardware exceeds this sustained throughput at the time of writing.
 
 The two most consequential bit-exact source-level wins of the 2026-05-18 investigation run counter to received wisdom on the same code base: (i) removing the \texttt{\_\_builtin\_prefetch} calls from the matmul inner loop yields a measurable improvement, because the Cortex-A76's hardware-prefetcher stride detector outperforms the manual hints (Stage~12); and (ii) the previous SILU+MUL fusion (Stage~10) was a thin two-call wrapper that kept the intermediate result resident in memory, so rewriting it as a single-pass NEON loop that holds the values in registers throughout achieves $+1.5\%$ at no quality cost (Stage~13). Both are reminders that ``well-known'' micro-optimisations on a hot kernel should be re-measured against the specific microarchitecture rather than carried forward from older platforms.
 
