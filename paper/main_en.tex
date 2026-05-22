@@ -1034,7 +1034,7 @@ For Qwen3-30B-A3B (128 experts, top-$k$=8), the activation ratio is $8/128 = 6.2
 
 \subsection{Limitations}
 \begin{enumerate}[nosep]
-  \item Energy efficiency was not measured directly. An external USB power meter (e.g.\ UM34C) is required for accurate measurement; the \texttt{vcgencmd pmic\_read\_adc} interface does not capture the full 5 V rail.
+  \item Energy efficiency was not measured directly (estimated $\sim$2~J/token for the four-node system from typical Pi~5 power figures; see Threats to Validity). An external USB power meter (e.g.\ UM34C) is required for an accurate figure; the \texttt{vcgencmd pmic\_read\_adc} interface does not capture the full 5~V rail.
   \item Prefill is severe ($\sim$2 min for 2K-token prompts, projected $\sim$20 min for 20K), making the system unsuitable for agentic workloads with large system prompts. Speculative decoding (Llama 3.2 1B as draft model verifying Qwen3-30B-A3B) was identified as a potential mitigation but not implemented (estimated 2--3 weeks of engineering work).
   \item Throughput was measured single-client. Multi-client goodput under SLO~\cite{zhong2024distserve} was not characterised.
   \item Quality regression vs.\ Llama 3.1 8B not formally tested; sample outputs are qualitatively coherent.
@@ -1088,7 +1088,27 @@ This selective degradation --- decode hurt, prefill spared --- independently cor
 \subsection{Apples-to-apples result against the public ceiling}
 On the strict decode metric, our optimised configuration sustains \textbf{15.143~tok/s} ($n$=20, 95\% CI $\pm$0.097, all \texttt{nTokens=109}), \textbf{+16.1\% above the 13.04~tok/s public ceiling}. We re-emphasise the residual confounds already stated in Section~\ref{sec:threats}: this compares our optimised 16~GB cluster against b4rtaz's vanilla 8~GB cluster, so the figure mixes our software and configuration work with a hardware-SKU difference and an \texttt{nthreads} difference. It is therefore an \emph{end-to-end system comparison}, not an isolated attribution of the speedup to our code.
 
-The cleanly isolated quantity --- vanilla v0.16.0 vs.\ our build on the \emph{same} 16~GB silicon --- is the controlled A/B we identify as the next measurement (Section~\ref{sec:threats}); until it is run, the same-hardware deltas we can defend without confound are the telemetry A/B above ($+5.18\%$) and the previously reported \texttt{nthreads} and OS-tuning A/Bs. Raw per-run CSVs for both arms are committed alongside this manuscript (\texttt{paper/data/}).
+To remove that confound we ran the controlled A/B on the \emph{same} 16~GB silicon: vanilla \texttt{distributed-llama} v0.16.5 versus our patched fork, both at the \#255 configuration (\texttt{nthreads=4}, identical bootloader/firmware, identical telemetry state). The result is \textbf{13.15~$\pm$~0.72 $\to$ 13.88~$\pm$~0.37~tok/s}, a \textbf{+5.6\%} gain attributable \emph{purely} to our source-level changes, with no hardware-SKU and no \texttt{nthreads} confound. Layering the OPT configuration (\texttt{nthreads=3}, IRQ/RPS pinning, \texttt{jemalloc}) on top reaches 15.143~tok/s. The full chain on identical 16~GB silicon --- vanilla $\to$ optimised --- is therefore \textbf{13.15 $\to$ 15.143~tok/s ($+$15.2\%)}, a confound-free figure; the $+$16.1\% headline against the 8~GB public record additionally carries the SKU caveat of Section~\ref{sec:threats}.
+
+Table~\ref{tab:attribution} decomposes the cumulative speedup into independently-measured levers, separating what is attributable to our code from architectural, firmware, configuration and operating-environment choices. The dominant lever by far is the architectural one (the MoE model, $+$59\%); our source-level engineering contributes a modest but clean $+$5.6\%, and the remaining gains come from runtime configuration, a firmware memory-interleave setting, and removing background telemetry. Raw per-run CSVs for all arms are committed alongside this manuscript (\texttt{paper/data/}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Attribution of the cumulative speedup. Each row is an independently-measured A/B (isolated, same hardware), not a cumulative running total.}
+\label{tab:attribution}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Lever} & \textbf{Category} & \textbf{Isolated $\Delta$} \\
+\midrule
+Qwen3-30B-A3B MoE vs.\ Llama-3.1-8B dense & model architecture & $+$59\% \\
+\texttt{nthreads=3} + IRQ/RPS pin + \texttt{jemalloc} vs.\ \texttt{nthreads=4} & runtime configuration & $+$10.3\% \\
+\texttt{SDRAM\_BANKLOW=1} (bootloader EEPROM) & firmware & $+$5.9\% \\
+Source-level patches (our fork vs.\ vanilla, same 16~GB) & \textbf{our code} & $+$5.6\% \\
+Telemetry stopped (clean-room vs.\ monitored) & operating environment & $+$5.18\% \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Bit-exact kernel work (T0.1) --- partial success, reverted}
 We attempted a further bit-exact decode optimisation, T0.1, that removes the per-element \texttt{vsubq\_s8(-8)} dequantisation of the Q40 weights via the integer identity $\sum_i a_i(b_i-8)=\sum_i a_i b_i - 8\sum_i a_i$, pre-computing the activation group-sum once per block. In the \texttt{matmul\_Q80\_Q40\_F32} dot-product path the rewrite was verified bit-exact by a deterministic single-core micro-test (zero differing floats vs.\ the original) and ran $+6.3\%$ faster in isolation.
@@ -1156,7 +1176,7 @@ Standard deviations of individual stages range from 0.030 to 0.140~tok/s; we hav
 \paragraph{External validity.}
 The cluster sits at a single physical site behind one Gigabit Ethernet switch with one PoE injector, and all four nodes were purchased in the same batch. We have not validated the optimisations on (i) a network with a different switch fabric (e.g.\ store-and-forward vs.\ cut-through), (ii) Pi 5 nodes with different BCM2712 silicon batches or thermal solutions, (iii) more than one switch hop (which would change the 0.226~ms intra-cluster latency that several of the Stage~9 and Stage~14 measurements implicitly assume), or (iv) Pi 5 hardware revisions beyond the original 16~GB SKU.
 
-Nor have we validated on the Pi~5 8~GB (the configuration of the public-ceiling reference): we expect the 16~GB SKU's larger memory for jemalloc tcache and OS file-cache to account for part of the headline improvement, and we would not predict the full $+10.81\%$ to carry over to the 8~GB SKU without re-measurement.
+Nor have we re-run on the Pi~5 8~GB SKU (the configuration of the public-ceiling reference): the 16~GB SKU's larger memory for \texttt{jemalloc} tcache and OS file-cache plausibly accounts for part of the gap to the 8~GB record. This is precisely why we do not rest the claim on the cross-SKU comparison: the confound-free figure is the controlled same-16~GB A/B (Section~\ref{sec:cleanroom-2026-05-22}: $+$5.6\% from our source code, $+$15.2\% total over vanilla on identical silicon), and the $+$16.1\% over the 8~GB record is reported as a system-level comparison, not an isolated attribution of the speedup to our code.
 
 \paragraph{Model validity.}
 All measurements are for \emph{one} model: Qwen3-30B-A3B Q40 (SHA-256 of model artefact in \texttt{docs/COMMIT-HASHES.md}). Stage 9 (\emph{TIER 0}) is a model-agnostic kernel-level network tuning bundle; Stages 10 and 13 (op-fusion of SILU+MUL) are MoE-specific (Llama-class dense models do not exercise the fused path); Stage 14 (\texttt{MAX\_CHUNK\_SIZE}) is generic.
@@ -1167,7 +1187,7 @@ We have not benchmarked Llama 3.1 8B dense at the final Stage 15 configuration t
 We have not run a standardised LLM quality benchmark (MMLU, HellaSwag, ARC, GSM8K via \texttt{lm-eval-harness}~\cite{lmevalharness2024}) on the final Stage 15 configuration. The SHA-256 bit-exactness guarantee implies model output \emph{identical} to the baseline of comparison, so a quality benchmark would by construction return the same score; an external numerical confirmation would nonetheless strengthen the manuscript. Expected execution time on the cluster: 8--12 hours overnight.
 
 \paragraph{Energy efficiency.}
-We do not report joules per token. A wall-plug wattmeter was not available at the time of the measurements; this is the only one of the five standard edge-inference metrics (throughput, latency, model quality, memory footprint, energy) we do not report. Protocol drafted (5 min sustained decode minus 5 min idle, multiplied across 4 nodes, divided by sustained tok/s).
+We do not \emph{directly measure} joules per token: a wall-plug wattmeter was unavailable at measurement time, and this is the only one of the five standard edge-inference metrics (throughput, latency, model quality, memory footprint, energy) we do not measure. As an order-of-magnitude \emph{estimate} (not a measurement), the Raspberry~Pi~5 draws roughly 7--8~W per node under sustained all-core load and $\sim$3.5~W idle; at 15.143~tok/s this implies $\sim$2~J/token for the full four-node system ($\sim$1~J/token incremental over idle). The exact protocol is drafted (5~min sustained decode minus 5~min idle, multiplied across the 4 nodes, divided by sustained tok/s), and a $\sim$\euro15 USB wattmeter (e.g.\ UM34C) closes the gap.
 
 \section*{Appendix A. Reproducibility}
 
