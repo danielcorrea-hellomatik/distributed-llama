@@ -138,12 +138,45 @@ After exhausting framework alternatives infeasible on ARM Linux without GPU/NPU 
 ARM PMU profiling locates the residual bottleneck in LPDDR4X memory bandwidth (49\% backend-stalled cycles, 11.4~GB/s sustained per node of an approximate 17~GB/s ceiling). We catalogue twenty-six unsuccessful configurations, document the constraint-discovery process (strict bit-exact, no kernel rebuild, no model change, no overclock) that narrowed the design space, and find that co-located observability agents (Grafana Alloy, cAdvisor) tax this memory-bound decode by 5.18\% while leaving compute-bound prefill unchanged --- a clean, same-hardware confirmation that decode is bandwidth-bound. The cluster reaches the memory wall of the Raspberry Pi~5; the single remaining bit-exact software lever is Async Tensor Parallelism, an estimated 250~LOC integration on the Phase~B foundation already shipped in the repository.
 \end{abstract}
 
+\begin{table}[h]
+\centering
+\small
+\caption{Results at a glance.}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Decode throughput} (apples-to-apples vs.\ the public ceiling) & \textbf{15.143 tok/s} \\
+\quad improvement over b4rtaz~\#255 (13.04 tok/s, decode) & \textbf{+16.1\%} \\
+Sustained serving throughput (prefill included) & 14.449 tok/s \\
+Time-to-first-token (TTFT) & 557 ms \\
+Per-node DRAM bandwidth (sustained / vendor ceiling) & 11.4 / 17 GB/s \\
+Hardware / cost & 4$\times$ Pi~5 16GB\, /\, $\sim$\euro500 \\
+Telemetry-off gain on decode (paired A/B) & +5.18\% \\
+Constraints honoured & bit-exact, no overclock, no model change \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \section{Introduction}
 
 Edge inference of large language models on consumer single-board computers (SBCs) is increasingly studied as a privacy-preserving, low-cost alternative to cloud inference \cite{geerling2025,stratosphere2025}. The Raspberry Pi~5 is the most widely deployed ARM-based SBC with enough RAM (16~GB) to host 8B-parameter quantised models, and its Ethernet I/O allows small clusters to be formed. The absence of a usable GPU --- the VideoCore VII lacks general compute shaders --- restricts inference to the CPU, where execution is memory-bandwidth-bound.
 
 \paragraph{Investigation timeline at a glance.}
-The investigation comprised three intertwined tracks: (i)~architectural exploration (which framework, model, and quantisation), which converged on \texttt{distributed-llama} + Qwen3-30B-A3B Q40 and established the operational baseline of 11.40~tok/s; (ii)~production-branch source-level work (Stages~1--8, 7.18 $\to$ 13.720~tok/s), driven primarily by the Stage~4 switch from Llama~3.1~8B to Qwen3-MoE ($+$59\%) plus the F0/F1/F2 \texttt{distributed-llama} patches; and (iii)~the bit-exact refinement work documented in detail here (Stages~9--15, 13.720 $\to$ 14.449~tok/s; $+$5.31\% over the pre-investigation production baseline, $+$26.75\% over the original Qwen3 measurement, and $+$10.81\% over the publicly documented ceiling of 13.04~tok/s set by Tadych~\cite{dllama_discussion255} on the same model and hardware class). Five hard constraints were progressively discovered and adopted as design rules: \emph{bit-exact output preservation} (SHA-256 of the first 100 generated token-ids must match a fixed pre-stage reference at \texttt{seed=42}, \texttt{temperature=0}); \emph{no kernel rebuild} (Pi OS stock kernel 6.12.75); \emph{no model change} (Qwen3-30B-A3B Q40 is fixed); \emph{no CPU overclock} (silicon stays at the nominal 2.4~GHz); and \emph{no reduction in model quality} (top-$k$ unchanged at 8, no Q3 down-quantisation, no expert pruning). These constraints rule out most speedup techniques in the recent literature \cite{li2025prima,halo2026}, but they make the surviving optimisations production-deployable with no risk of quality regression.
+The investigation comprised three intertwined tracks:
+\begin{enumerate}[label=(\roman*),nosep,leftmargin=2.2em]
+  \item \textbf{Architectural exploration} (framework, model, quantisation): converged on \texttt{distributed-llama} + Qwen3-30B-A3B Q40, establishing the operational baseline of 11.40~tok/s.
+  \item \textbf{Production-branch source work} (Stages~1--8, 7.18 $\to$ 13.720~tok/s): driven mainly by the Stage~4 switch from Llama~3.1~8B to Qwen3-MoE ($+$59\%), plus the F0/F1/F2 \texttt{distributed-llama} patches.
+  \item \textbf{Bit-exact refinement} (Stages~9--15, 13.720 $\to$ 14.449~tok/s sustained; 15.143~tok/s decode): documented in detail here.
+\end{enumerate}
+
+\noindent Five hard constraints, discovered progressively and adopted as design rules, frame the entire work:
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \emph{Bit-exact output} --- SHA-256 of the first 100 generated token-ids matches a fixed pre-stage reference (\texttt{seed=42}, \texttt{temperature=0}).
+  \item \emph{No kernel rebuild} --- stock Pi~OS kernel 6.12.75.
+  \item \emph{No model change} --- Qwen3-30B-A3B Q40 is fixed.
+  \item \emph{No CPU overclock} --- silicon stays at the nominal 2.4~GHz.
+  \item \emph{No quality reduction} --- top-$k$ unchanged at 8, no Q3 down-quantisation, no expert pruning.
+\end{itemize}
+\noindent These constraints rule out most speedup techniques in the recent literature~\cite{li2025prima,halo2026}, but they make the surviving optimisations production-deployable with no risk of quality regression.
 
 \textbf{Contributions of this report.}
 \begin{enumerate}[nosep]
@@ -1030,7 +1063,18 @@ The two most consequential bit-exact source-level wins of the 2026-05-18 investi
 
 The single remaining software direction we have identified as likely to lift sustained throughput further within the bit-exact constraint is wiring the Phase~B Async-TP foundation already shipped in the repository (Section~\ref{sec:future-work-halo}--Future Work). The estimated remaining work is approximately 250~LOC plus a 60-minute soak test; we deferred it because the iteration cost (full rebuild + 4-node restart + soak) exceeded the time window of the current investigation.
 
-Reaching this ceiling required adapting the host operating system as heavily as the application itself. Across the four nodes we: pinned the CPU governor to \texttt{performance} at the nominal 2.4~GHz; set \texttt{SDRAM\_BANKLOW=1} in the bootloader EEPROM --- a firmware-level memory-interleave change that lifted effective read bandwidth from 8.3 to 12.5~GB/s per node, bit-exact, for $+5.9\%$; ran the inference with \texttt{--nthreads 3} rather than 4, freeing one core, and pinned the Ethernet IRQ and Receive Packet Steering to that freed core (CPU~3); preloaded \texttt{jemalloc} with a tuned arena and tcache configuration; \texttt{mlock}-ed the model weights into RAM (\texttt{LimitMEMLOCK=infinity}, $\sim$4.45~GB locked per worker); switched the network stack to BBR with enlarged \texttt{SO\_RCVBUF}/\texttt{SO\_SNDBUF}, disabled GRO, and enabled \texttt{busy\_poll}; lowered \texttt{vm.swappiness} to 1 and placed swap on NVMe; set the NVMe scheduler to \texttt{none} with a larger read-ahead; and enlarged the NIC RX ring with Receive Flow Steering and deferred NAPI. The full state is captured in four \texttt{systemd} units (\texttt{dllama-api}, \texttt{dllama-worker}, \texttt{cpu-performance}, \texttt{dllama-irqpin}) plus a runtime-tweaks unit, so a cold cluster boots straight into the optimised configuration. We also found that the operating environment must be considered in full: the clean-room experiment of Section~\ref{sec:cleanroom-2026-05-22} showed that even a co-located observability stack (Grafana Alloy and cAdvisor) silently taxes decode throughput by $\sim$5\%. Every one of these levers was held to the bit-exact constraint; several plausible candidates (transparent huge pages, jumbo frames, NUMA interleave, software prefetch, PGO) were tested and \emph{reverted} as neutral or harmful on this DRAM-bandwidth-bound workload.
+Reaching this ceiling required adapting the host operating system as heavily as the application itself. Across the four nodes we applied:
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item CPU governor \texttt{performance} at the nominal 2.4~GHz.
+  \item \texttt{SDRAM\_BANKLOW=1} in the bootloader EEPROM --- a firmware-level memory-interleave change that lifted effective read bandwidth from 8.3 to 12.5~GB/s per node, bit-exact ($+5.9\%$).
+  \item \texttt{--nthreads 3} (not 4), freeing one core, with the Ethernet IRQ and Receive Packet Steering pinned to that freed core (CPU~3).
+  \item \texttt{jemalloc} preloaded with a tuned arena/tcache configuration.
+  \item \texttt{mlock}-ed model weights (\texttt{LimitMEMLOCK=infinity}, $\sim$4.45~GB locked per worker).
+  \item BBR network stack with enlarged \texttt{SO\_RCVBUF}/\texttt{SO\_SNDBUF}, GRO disabled, \texttt{busy\_poll} enabled.
+  \item \texttt{vm.swappiness=1}, swap on NVMe; NVMe scheduler \texttt{none} with a larger read-ahead.
+  \item Enlarged NIC RX ring with Receive Flow Steering and deferred NAPI.
+\end{itemize}
+\noindent The full state is captured in four \texttt{systemd} units (\texttt{dllama-api}, \texttt{dllama-worker}, \texttt{cpu-performance}, \texttt{dllama-irqpin}) plus a runtime-tweaks unit, so a cold cluster boots straight into the optimised configuration. The operating environment must be considered in full: the clean-room experiment of Section~\ref{sec:cleanroom-2026-05-22} showed that even a co-located observability stack (Grafana Alloy and cAdvisor) silently taxes decode throughput by $\sim$5\%. Every lever was held to the bit-exact constraint; several plausible candidates (transparent huge pages, jumbo frames, NUMA interleave, software prefetch, PGO) were tested and \emph{reverted} as neutral or harmful on this DRAM-bandwidth-bound workload.
 
 Taken together, these results drive a four-node Raspberry Pi~5 cluster to the physical ceiling of its LPDDR4X memory subsystem. At 49\% backend-stalled cycles and roughly 11.4 of the $\sim$17~GB/s vendor bandwidth realised per node, decode is memory-bandwidth-bound: the bytes moved per token are fixed by the model and its quantisation, and no further bit-exact \emph{reduction} of that traffic is available --- the one lever left (Async-TP) overlaps communication with computation rather than moving fewer bytes. The telemetry experiment of Section~\ref{sec:cleanroom-2026-05-22} sharpens the point: even the few percent of DRAM bandwidth consumed by a background monitoring agent is directly visible in the decode rate, while the compute-bound prefill phase is untouched. We have, in short, reached the \emph{memory wall} that the Raspberry~Pi~5 presents. To our knowledge, \textbf{15.143~tok/s} is the highest rate at which a 30-billion-parameter Mixture-of-Experts model has been driven on this hardware class --- bit-exact, with no overclock and no loss of output quality. Pushing past it is no longer a software problem but a silicon one: it requires memory with more bandwidth.
 
