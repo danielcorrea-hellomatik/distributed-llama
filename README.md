@@ -615,6 +615,7 @@ If this work is useful in academic context, please cite it as:
   author = {Correa Villa, Daniel},
   title  = {Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster: An Empirical Evaluation of Frameworks, Bit-Exact Optimisations, and Failure Modes for Edge Mixture-of-Experts Serving},
   year   = {2026},
+  doi    = {10.5281/zenodo.20357376},
   url    = {https://github.com/hellomatik-org/distributed-llama}
 }
 ```
