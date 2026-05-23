@@ -1,0 +1,78 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Introduction}{4}{section.1}%
+\contentsline {paragraph}{Investigation timeline at a glance.}{4}{section.1}%
+\contentsline {section}{\numberline {2}Related work}{6}{section.2}%
+\contentsline {section}{\numberline {3}System design}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Hardware}{7}{subsection.3.1}%
+\contentsline {paragraph}{Per-node specifications.}{7}{table.caption.4}%
+\contentsline {subsection}{\numberline {3.2}Topology}{8}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Software stack}{8}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Methodology}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Metrics}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Protocol}{8}{subsection.4.2}%
+\contentsline {section}{\numberline {5}Optimisations applied}{9}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Framework source patches}{9}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Toolchain}{9}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Operating-system tuning}{9}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Architectural change: dense to MoE}{9}{subsection.5.4}%
+\contentsline {section}{\numberline {6}Results}{9}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Final-configuration throughput and stability}{9}{subsection.6.1}%
+\contentsline {paragraph}{Per-run throughput distribution (Stage~6 snapshot).}{10}{table.caption.7}%
+\contentsline {paragraph}{Time-To-First-Token (Stage~6 snapshot).}{11}{figure.caption.9}%
+\contentsline {paragraph}{Throughput scaling with response length (Stage~6 snapshot).}{11}{table.caption.10}%
+\contentsline {paragraph}{Prefill rate vs.\ prompt size (Stage~6 snapshot).}{11}{figure.caption.11}%
+\contentsline {subsection}{\numberline {6.2}Optimisation trajectory}{12}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Memory and thermal behaviour}{12}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Stage 9 --- TIER 0 kernel network and scheduler tuning}{13}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Configuration changes}{13}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Measured impact}{13}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Two rejected candidates from the same research round}{13}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Open work after Stage 9}{13}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Stages 10 and 11 --- Bit-exact MoE op-fusion and Rounds 3/4 ceiling investigation}{14}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Stage 10 --- A2 OP\_SILU\_MUL fusion (+0.5\%)}{14}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Stage 11 --- Rounds 3 and 4 (Linux papers research and ceiling investigation)}{14}{subsection.8.2}%
+\contentsline {subsubsection}{\numberline {8.2.1}Literature survey: techniques evaluated and rejected}{14}{subsubsection.8.2.1}%
+\contentsline {subsubsection}{\numberline {8.2.2}Phase B foundation cherry-picked}{15}{subsubsection.8.2.2}%
+\contentsline {subsubsection}{\numberline {8.2.3}EEVDF per-task slice}{15}{subsubsection.8.2.3}%
+\contentsline {subsubsection}{\numberline {8.2.4}Sysctl bundles (R3 + R4)}{15}{subsubsection.8.2.4}%
+\contentsline {subsubsection}{\numberline {8.2.5}Empirical bottleneck characterisation}{16}{subsubsection.8.2.5}%
+\contentsline {subsubsection}{\numberline {8.2.6}Cluster state and benchmark after Stage 11}{17}{subsubsection.8.2.6}%
+\contentsline {subsection}{\numberline {8.3}Bottom line after Stage 11}{17}{subsection.8.3}%
+\contentsline {section}{\numberline {9}Stages 12--15 --- Hot-kernel inversion, true single-pass fusion, network chunk-size sweep, runtime NIC tuning}{17}{section.9}%
+\contentsline {paragraph}{Stage 12 --- Remove software prefetch in \texttt {matmul\_Q80\_Q40\_F32} (commit \texttt {64ef787}).}{17}{section.9}%
+\contentsline {paragraph}{Stage 13 --- True single-pass \texttt {silu\_mul\_F32} fusion (commit \texttt {1af175c}).}{17}{section.9}%
+\contentsline {paragraph}{Stage 14 --- \texttt {MAX\_CHUNK\_SIZE} sweep, 4~KB $\rightarrow $ 16~KB (commit \texttt {f8ed9d2}).}{18}{figure.caption.23}%
+\contentsline {paragraph}{Stage 15 --- Runtime kernel tweaks persisted via systemd (commit \texttt {edbc4ce}).}{18}{table.caption.24}%
+\contentsline {paragraph}{Negative results catalogued in the same session.}{18}{table.caption.24}%
+\contentsline {section}{\numberline {10}Stage 16 --- WFE/SEV inter-step barrier and API robustness hardening}{19}{section.10}%
+\contentsline {subsection}{\numberline {10.1}API robustness: uncaught-exception crash on client disconnect}{19}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}WFE/SEV barrier}{19}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}Measurement}{19}{subsection.10.3}%
+\contentsline {section}{\numberline {11}Statistical significance of the Stages 8--15 trajectory}{20}{section.11}%
+\contentsline {section}{\numberline {12}Failed configurations and frameworks}{20}{section.12}%
+\contentsline {paragraph}{Why EXO works on Mac (ARM) but not on Pi 5 (ARM).}{21}{table.caption.28}%
+\contentsline {section}{\numberline {13}Discussion}{21}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Bottleneck analysis}{21}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.2}Mixture-of-Experts as architectural sparse computation}{22}{subsection.13.2}%
+\contentsline {subsection}{\numberline {13.3}Comparative cost/performance}{22}{subsection.13.3}%
+\contentsline {subsection}{\numberline {13.4}Limitations}{22}{subsection.13.4}%
+\contentsline {subsection}{\numberline {13.5}Future work: HALO overlap scheme}{22}{subsection.13.5}%
+\contentsline {subsection}{\numberline {13.6}Future work: alternative model candidates}{23}{subsection.13.6}%
+\contentsline {section}{\numberline {14}Clean-room decode-rate replication and telemetry interference}{23}{section.14}%
+\contentsline {subsection}{\numberline {14.1}Motivation: metric alignment with the public ceiling}{23}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}Telemetry-bandwidth interference}{23}{subsection.14.2}%
+\contentsline {subsection}{\numberline {14.3}Apples-to-apples result against the public ceiling}{24}{subsection.14.3}%
+\contentsline {subsection}{\numberline {14.4}Bit-exact kernel work (T0.1) --- partial success, reverted}{24}{subsection.14.4}%
+\contentsline {section}{\numberline {15}Final conclusion}{25}{section.15}%
+\contentsline {subsection}{\numberline {15.1}What moved the needle}{25}{subsection.15.1}%
+\contentsline {subsection}{\numberline {15.2}Operating-system tuning}{25}{subsection.15.2}%
+\contentsline {subsection}{\numberline {15.3}The memory wall}{26}{subsection.15.3}%
+\contentsline {subsection}{\numberline {15.4}Future work}{26}{subsection.15.4}%
+\contentsline {subsection}{\numberline {15.5}Threats to validity}{26}{subsection.15.5}%
+\contentsline {paragraph}{Construct validity.}{26}{subsection.15.5}%
+\contentsline {paragraph}{Internal validity.}{27}{subsection.15.5}%
+\contentsline {paragraph}{External validity.}{27}{subsection.15.5}%
+\contentsline {paragraph}{Model validity.}{27}{subsection.15.5}%
+\contentsline {paragraph}{Quality preservation.}{28}{subsection.15.5}%
+\contentsline {paragraph}{Energy efficiency.}{28}{subsection.15.5}%
+\contentsline {paragraph}{Bit-exact verification (one command).}{28}{lstnumber.-1.8}%

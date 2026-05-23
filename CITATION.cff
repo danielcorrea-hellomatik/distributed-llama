@@ -7,7 +7,8 @@ authors:
   - family-names: "Correa Villa"
     given-names: "Daniel"
 version: "1.0.0"
-date-released: "2026-05-21"
+date-released: "2026-05-23"
+doi: "10.5281/zenodo.20357376"
 license: MIT
 url: "https://github.com/hellomatik-org/distributed-llama"
 repository-code: "https://github.com/hellomatik-org/distributed-llama"

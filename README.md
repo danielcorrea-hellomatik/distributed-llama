@@ -1,5 +1,7 @@
 # Distributed LLM Inference Cluster — 4x Raspberry Pi 5
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20357376.svg)](https://doi.org/10.5281/zenodo.20357376)
+
 Production-grade distributed inference cluster running **Qwen3-30B-A3B (Mixture of Experts)** at **15.143 tokens/second decode** — **+16.1% over the highest publicly documented result** for this model and hardware class (13.04 tok/s, b4rtaz #255), bit-exact and with no overclock (end-to-end sustained serving throughput, prefill included, is 14.449 tok/s). Runs on 4x Raspberry Pi 5 16GB, built on a patched fork of `distributed-llama` v0.16.5 with **twelve source-level fixes plus persistent runtime kernel tweaks**, exposed as an OpenAI-compatible HTTP API, and integrated with Hermes Agent for autonomous workflows. We reach the **memory wall** of the Pi 5 LPDDR4X subsystem; the residual is silicon, not software.
 
 This repository contains the complete configuration, patches, systemd units, deployment scripts and technical report needed to reproduce the setup on any 4-node ARM64 Linux cluster.
