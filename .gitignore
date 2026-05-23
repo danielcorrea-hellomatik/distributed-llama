@@ -26,3 +26,7 @@ docs/SESSION-*.md
 docs/PAPER-PUBLICATION-PLAN.md
 docs/DEEP-RESEARCH-*.md
 docs/IMPLEMENTATION-FEASIBILITY-*.md
+# LaTeX build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out

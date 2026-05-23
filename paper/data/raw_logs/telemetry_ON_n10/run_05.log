@@ -1,0 +1,218 @@
+Tokenizer vocab size (151669) does not match the model vocab size (151936)
+📄 AddBos: 0
+📄 BosId: 151643 (<|endoftext|>)
+📄 EosId: 151645 (<|im_end|>) 
+📄 RegularVocabSize: 151643
+📄 SpecialVocabSize: 26
+💡 Arch: Qwen3 MoE
+💡 HiddenAct: Silu
+💡 Dim: 2048
+💡 HeadDim: 128
+💡 QDim: 4096
+💡 KvDim: 512
+💡 HiddenDim: 6144
+💡 VocabSize: 151936
+💡 nLayers: 48
+💡 nHeads: 32
+💡 nKvHeads: 4
+💡 OrigSeqLen: 262144
+💡 nExperts: 128
+💡 nActiveExperts: 8
+💡 MoeHiddenDim: 768
+💡 SeqLen: 4096
+💡 NormEpsilon: 0.000001
+💡 RopeType: Falcon
+💡 RopeTheta: 10000000
+📀 RequiredMemory: 5513 MB
+⭕ Socket[0]: connecting to 192.168.1.77:9998 worker
+⭕ Socket[0]: connected
+⭕ Socket[1]: connecting to 192.168.1.75:9998 worker
+⭕ Socket[1]: connected
+⭕ Socket[2]: connecting to 192.168.1.76:9998 worker
+⭕ Socket[2]: connected
+⭕ Network is initialized
+🧠 CPU: neon dotprod fp16
+💿 Loading weights...
+💿 Loaded 1/48
+💿 Loaded 2/48
+💿 Loaded 3/48
+💿 Loaded 4/48
+💿 Loaded 5/48
+💿 Loaded 6/48
+💿 Loaded 7/48
+💿 Loaded 8/48
+💿 Loaded 9/48
+💿 Loaded 10/48
+💿 Loaded 11/48
+💿 Loaded 12/48
+💿 Loaded 13/48
+💿 Loaded 14/48
+💿 Loaded 15/48
+💿 Loaded 16/48
+💿 Loaded 17/48
+💿 Loaded 18/48
+💿 Loaded 19/48
+💿 Loaded 20/48
+💿 Loaded 21/48
+💿 Loaded 22/48
+💿 Loaded 23/48
+💿 Loaded 24/48
+💿 Loaded 25/48
+💿 Loaded 26/48
+💿 Loaded 27/48
+💿 Loaded 28/48
+💿 Loaded 29/48
+💿 Loaded 30/48
+💿 Loaded 31/48
+💿 Loaded 32/48
+💿 Loaded 33/48
+💿 Loaded 34/48
+💿 Loaded 35/48
+💿 Loaded 36/48
+💿 Loaded 37/48
+💿 Loaded 38/48
+💿 Loaded 39/48
+💿 Loaded 40/48
+💿 Loaded 41/48
+💿 Loaded 42/48
+💿 Loaded 43/48
+💿 Loaded 44/48
+💿 Loaded 45/48
+💿 Loaded 46/48
+💿 Loaded 47/48
+💿 Loaded 48/48
+💿 Weights loaded
+🚁 Network is in non-blocking mode
+<|im_start|>user
+Please explain me where is Poland as I have 1 year<|im_end|>
+<|im_start|>assistant
+
+🔷️ Eval  806 ms Sync  226 ms | Sent 12084 kB Recv 20085 kB | (19 tokens)
+🔶 Pred   51 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | Of
+🔶 Pred   51 ms Sync   12 ms | Sent   636 kB Recv  1057 kB |  course
+🔶 Pred   51 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | !
+🔶 Pred   51 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Let
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  me
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  help
+🔶 Pred   61 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  you
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  understand
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  where
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  Poland
+🔶 Pred   51 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  is
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  located
+🔶 Pred   51 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | ,
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  especially
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  if
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  you
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | 're
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  new
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  to
+🔶 Pred   60 ms Sync   19 ms | Sent   636 kB Recv  1057 kB |  the
+🔶 Pred   59 ms Sync   21 ms | Sent   636 kB Recv  1057 kB |  region
+🔶 Pred   64 ms Sync   30 ms | Sent   636 kB Recv  1057 kB |  or
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  learning
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  about
+🔶 Pred   47 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  it
+🔶 Pred   62 ms Sync   21 ms | Sent   636 kB Recv  1057 kB | .
+
+
+🔶 Pred   48 ms Sync   15 ms | Sent   636 kB Recv  1057 kB | 🌍
+🔶 Pred   51 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  **
+🔶 Pred   50 ms Sync   15 ms | Sent   636 kB Recv  1057 kB | Where
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  is
+🔶 Pred   50 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  Poland
+🔶 Pred   50 ms Sync   17 ms | Sent   636 kB Recv  1057 kB | ?
+🔶 Pred   57 ms Sync   26 ms | Sent   636 kB Recv  1057 kB | **
+
+
+🔶 Pred   60 ms Sync   11 ms | Sent   636 kB Recv  1057 kB | Pol
+🔶 Pred   69 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | and
+🔶 Pred   52 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  is
+🔶 Pred   49 ms Sync   36 ms | Sent   636 kB Recv  1057 kB |  a
+🔶 Pred   50 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  country
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  in
+🔶 Pred   52 ms Sync   12 ms | Sent   636 kB Recv  1057 kB |  **
+🔶 Pred   61 ms Sync   11 ms | Sent   636 kB Recv  1057 kB | Central
+🔶 Pred   56 ms Sync   12 ms | Sent   636 kB Recv  1057 kB |  Europe
+🔶 Pred   50 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | **
+🔶 Pred   48 ms Sync   16 ms | Sent   636 kB Recv  1057 kB | .
+🔶 Pred   48 ms Sync   19 ms | Sent   636 kB Recv  1057 kB |  It
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  lies
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  in
+🔶 Pred   48 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  the
+PHASE_B_STATS forwards=50  syncNodeSlices=6499 calls / 812552 us  (125.0 us/call)  syncWithRoot=67 calls / 1226 us (18.3 us/call)  approx per-forward sync time: 16275.6 us
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  **
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | heart
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  of
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Europe
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | **,
+🔶 Pred   63 ms Sync   11 ms | Sent   636 kB Recv  1057 kB |  bordered
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  by
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  seven
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  countries
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB | ,
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  which
+🔶 Pred   48 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  makes
+🔶 Pred   60 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  it
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  a
+🔶 Pred   56 ms Sync   19 ms | Sent   636 kB Recv  1057 kB |  key
+🔶 Pred   59 ms Sync   23 ms | Sent   636 kB Recv  1057 kB |  nation
+🔶 Pred   72 ms Sync   25 ms | Sent   636 kB Recv  1057 kB |  in
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  the
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  region
+🔶 Pred   49 ms Sync   16 ms | Sent   636 kB Recv  1057 kB | .
+
+
+🔶 Pred   60 ms Sync   19 ms | Sent   636 kB Recv  1057 kB | ###
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | 📍
+🔶 Pred   51 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  Ne
+🔶 Pred   48 ms Sync   15 ms | Sent   636 kB Recv  1057 kB | ighb
+🔶 Pred   51 ms Sync   20 ms | Sent   636 kB Recv  1057 kB | oring
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Countries
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  (
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | Clock
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | wise
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  from
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  the
+🔶 Pred   50 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  north
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | ):
+
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | 1
+🔶 Pred   52 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | .
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  **
+🔶 Pred   48 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | Russia
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  (
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | Kal
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | ining
+🔶 Pred   50 ms Sync   17 ms | Sent   636 kB Recv  1057 kB | rad
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Obl
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | ast
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | )**
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  –
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  a
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Russian
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  ex
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | clave
+PHASE_B_STATS forwards=100  syncNodeSlices=11349 calls / 1406566 us  (123.9 us/call)  syncWithRoot=117 calls / 2060 us (17.6 us/call)  approx per-forward sync time: 14086.3 us
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  (
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB | a
+🔶 Pred   48 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Russian
+🔶 Pred   49 ms Sync   15 ms | Sent   636 kB Recv  1057 kB |  territory
+🔶 Pred   50 ms Sync   13 ms | Sent   636 kB Recv  1057 kB |  surrounded
+🔶 Pred   49 ms Sync   16 ms | Sent   636 kB Recv  1057 kB |  by
+🔶 Pred   49 ms Sync   14 ms | Sent   636 kB Recv  1057 kB |  Poland
+🔶 Pred   49 ms Sync   13 ms | Sent   636 kB Recv  1057 kB | ).
+
+🔶 Pred   91 ms Sync    9 ms | Sent   636 kB Recv  1057 kB | 2
+🔶 Pred   86 ms Sync   76 ms | Sent   636 kB Recv  1057 kB | .
+🔶 Pred   50 ms Sync   37 ms | Sent   636 kB Recv  1057 kB |  **
+
+Evaluation
+   nBatches: 32
+    nTokens: 19
+   tokens/s: 18.39 (54.39 ms/tok)
+Prediction
+    nTokens: 109
+   tokens/s: 14.65 (68.24 ms/tok)
+⭕ Network is closed
