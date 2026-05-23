@@ -1,4 +1,4 @@
-<!-- paper-url: https://github.com/hellomatik-org/distributed-llama/blob/kernel-opt-t02/paper/main_en.pdf -->
+<!-- paper-url: https://github.com/hellomatik-org/distributed-llama/blob/pi5-cluster/paper/main_en.pdf -->
 
 A 30-billion-parameter Mixture-of-Experts model (Qwen3-30B-A3B) runs on **four Raspberry Pi 5 boards** — CPU-only hardware, no GPU, no NPU — at **15.143 tok/s decode**: bit-exact and **+16.1% above the highest publicly documented result** for this model and hardware class (13.04 tok/s, b4rtaz #255). On identical 16 GB silicon the same result is **+15.2%** over the vanilla `distributed-llama` baseline (13.15 → 15.143 tok/s) — a confound-free figure attributable to our software and configuration alone; the cross-SKU comparison carries no measurable hardware confound either, since vanilla on our 16 GB cluster measures 13.15 tok/s, within run-to-run noise of the 8 GB record. This is a condensed technical write-up of our report; the full paper — every table, figure and raw log — is one click away.
 
