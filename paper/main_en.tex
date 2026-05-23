@@ -4,13 +4,26 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[english]{babel}
-% Note: mathptmx + helvet + courier not available in this minimal TeX
-% install; fall back to the default Computer Modern font family.
-% Disable microtype expansion (incompatible with CM bitmap fonts);
-% protrusion (margin kerning) still works and provides ~80% of the
-% visual quality improvement.
-\usepackage[protrusion=true,expansion=false]{microtype}
+% Latin Modern: full Type1 (T1) outlines for roman, sans, typewriter and math.
+% Fixes the Computer Modern *bitmap* (Type 3) fallback that fontenc T1 triggered
+% in this TeX install and which garbled \texttt identifiers (e.g. the Algorithm
+% listing) and made dense paragraphs look smeared. (Times/Helvetica/Courier
+% metrics are not installed in this minimal TeX; Latin Modern is and looks the
+% same as Computer Modern but renders as crisp vector outlines.)
+\usepackage{lmodern}
+% With Type1 fonts, microtype font-expansion works and tightens justification.
+\usepackage[protrusion=true,expansion=true]{microtype}
+% Keep "--" / "---" as literal hyphens inside \texttt (CLI flags like
+% --nthreads, --tile-sync, and compiler flags -O3 -flto ...). Without this the
+% typewriter font renders "--" as an en-dash, corrupting any command
+% copy-pasted from the PDF.
+\DisableLigatures{encoding = *, family = tt*}
 \usepackage[margin=2.5cm,top=2.2cm,bottom=2.5cm]{geometry}
+
+% Block paragraphs (OpenAI / Anthropic technical-report style): vertical
+% spacing between paragraphs instead of a first-line indent. Adds the
+% "line breaks" / breathing room between paragraphs across the document.
+\usepackage{parskip}
 
 % Relax line-breaking to reduce overfull \hbox from long \texttt{...}
 % identifiers that LaTeX cannot hyphenate.
@@ -19,7 +32,10 @@
 % Math + symbols
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{siunitx}
-\usepackage{eurosym}
+% Euro sign via textcomp (\texteuro): unlike eurosym's \euro, this carries a
+% correct Unicode mapping, so "EUR500" copy-pastes as "\euro 500" not "e500".
+\usepackage{textcomp}
+\providecommand{\euro}{}\renewcommand{\euro}{\texteuro}
 
 % Floats, tables, lists
 \usepackage{booktabs}            % horizontal rules \toprule \midrule \bottomrule
@@ -29,7 +45,10 @@
 \usepackage{graphicx}
 \graphicspath{{figures/}}
 \usepackage{enumitem}
-\setlist{itemsep=2pt,topsep=3pt}
+% Bullet/numbered lists: clear left indent, room to breathe above/below the
+% list and between items, and continuation lines aligned under the item text.
+\setlist{leftmargin=1.6em,labelsep=0.6em,itemsep=4pt,topsep=6pt,parsep=0pt}
+\setlist[itemize]{label=\textbullet}
 
 % Graphics + diagrams
 \usepackage{xcolor}
@@ -78,8 +97,13 @@
 \titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
 \titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+% \paragraph as a real heading on its own line (not run-in): turns the
+% "Construct validity", "Internal validity", "Stage 13 ..." leads into
+% visible sub-headings throughout the document, breaking up dense prose.
+\titleformat{\paragraph}[hang]{\normalsize\bfseries}{}{0pt}{}
 \titlespacing*{\section}{0pt}{14pt}{6pt}
 \titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\titlespacing*{\paragraph}{0pt}{9pt}{3pt}
 
 % Title block — centred, no rules, NeurIPS/OpenAI style
 \usepackage{titling}
@@ -98,10 +122,9 @@
   \par\endgroup\vspace{10pt}%
 }
 
-\title{Hitting the Memory Wall on Four Raspberry Pis:\\[0.15cm]
-       Bit-Exact 30B Mixture-of-Experts Inference at the Edge,\\
-       +16\% over the Public Record}
-\hypersetup{pdftitle={Hitting the Memory Wall on Four Raspberry Pis: Bit-Exact 30B Mixture-of-Experts Inference at the Edge},pdfauthor={Daniel Correa Villa}}
+\title{Pushing Four Raspberry Pis to the Memory Wall:\\[0.15cm]
+       Bit-Exact 30B Mixture-of-Experts Inference, $+$16\% over the Public Record}
+\hypersetup{pdftitle={Pushing Four Raspberry Pis to the Memory Wall: Bit-Exact 30B Mixture-of-Experts Inference, +16\% over the Public Record},pdfauthor={Daniel Correa Villa}}
 \author{Daniel Correa Villa\\
   \small Hellomatik --- Raspberry Pi Cluster Lab}
 \date{21 May 2026}
@@ -112,15 +135,19 @@
 \thispagestyle{plain}
 \vspace*{3.5cm}
 \begin{center}
-  {\LARGE Hitting the Memory Wall on Four Raspberry Pis\par}
+  {\LARGE\bfseries Pushing Four Raspberry Pis to the Memory Wall\par}
   \vspace{0.4cm}
-  {\large Bit-Exact 30B Mixture-of-Experts Inference at the Edge,\\[0.15cm]
+  {\large Bit-Exact 30B Mixture-of-Experts Inference,\\[0.15cm]
    $+$16\% over the Public Record\par}
-  \vspace{1.4cm}
-  {\normalsize Daniel Correa Villa\par}
-  \vspace{0.2cm}
-  {\small Hellomatik --- Raspberry Pi Cluster Lab\par}
-  \vspace{1.0cm}
+  \vspace{1.8cm}
+  {\LARGE\bfseries Daniel Correa Villa\par}
+  \vspace{0.5cm}
+  {\Large\scshape Hellomatik\par}
+  \vspace{0.15cm}
+  {\large Raspberry Pi Cluster Lab\par}
+  \vspace{0.6cm}
+  {\small\href{https://hellomatik.com/research/hitting-the-memory-wall-30b-moe-raspberry-pi}{\texttt{hellomatik.com/research/\allowbreak hitting-the-memory-wall-30b-moe-raspberry-pi}}\par}
+  \vspace{1.6cm}
   {\small 21 May 2026\par}
 \end{center}
 \newpage
@@ -170,14 +197,14 @@ The absence of a usable GPU --- the VideoCore VII lacks general compute shaders 
 
 \paragraph{Investigation timeline at a glance.}
 The investigation comprised three intertwined tracks:
-\begin{enumerate}[label=(\roman*),nosep,leftmargin=2.2em]
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
   \item \textbf{Architectural exploration} (framework, model, quantisation): converged on \texttt{distributed-llama} + Qwen3-30B-A3B Q40, establishing the operational baseline of 11.40~tok/s.
   \item \textbf{Production-branch source work} (Stages~1--8, 7.18 $\to$ 13.720~tok/s): driven mainly by the Stage~4 switch from Llama~3.1~8B to Qwen3-MoE ($+$59\%), plus the F0/F1/F2 \texttt{distributed-llama} patches.
   \item \textbf{Bit-exact refinement} (Stages~9--15, 13.720 $\to$ 14.449~tok/s sustained; 15.143~tok/s decode): documented in detail here.
 \end{enumerate}
 
 \noindent Five hard constraints, discovered progressively and adopted as design rules, frame the entire work:
-\begin{itemize}[nosep,leftmargin=1.4em]
+\begin{itemize}
   \item \emph{Bit-exact output} --- SHA-256 of the first 100 generated token-ids matches a fixed pre-stage reference (\texttt{seed=42}, \texttt{temperature=0}).
   \item \emph{No kernel rebuild} --- stock Pi~OS kernel 6.12.75.
   \item \emph{No model change} --- Qwen3-30B-A3B Q40 is fixed.
@@ -187,7 +214,7 @@ The investigation comprised three intertwined tracks:
 \noindent These constraints rule out most speedup techniques in the recent literature~\cite{li2025prima,halo2026}, but they make the surviving optimisations production-deployable with no risk of quality regression.
 
 \textbf{Contributions of this report.}
-\begin{enumerate}[nosep]
+\begin{enumerate}
   \item We characterise the bottleneck of CPU-only distributed inference on Pi~5 in terms of memory bandwidth and synchronisation overhead, confirmed by ARM PMU profiling (49\% backend-stalled cycles, 11.4~GB/s sustained DRAM traffic per node out of a $\sim$17~GB/s theoretical ceiling; per-token sync overhead $\sim$12.3~ms = 17.7\% of token time).
   \item We develop and apply \textbf{twelve} source-level changes to the \texttt{distributed-llama} framework (eight framework patches plus four bit-exact kernel and op-fusion optimisations) that fix critical bugs (uint8 overflow, JSON crash, header truncation), enable optimisation flags previously inaccessible, introduce a bit-exact \texttt{OP\_SILU\_MUL} kernel fusion (Stage~10) and a true single-pass version of the same kernel (Stage~13), invert a long-standing software-prefetch micro-optimisation in the matmul inner loop (Stage~12, the HW prefetcher of the Cortex-A76 turns out to be more efficient than the manual hints it was given), tune \texttt{MAX\_CHUNK\_SIZE} for the \texttt{writeMany}/\texttt{readMany} all-reduce loop (Stage~14, 4-fold reduction in \texttt{send()}/\texttt{recv()} syscall count), and ship a foundation for tile-level overlap of computation and communication for a future sprint.
   \item We design a kernel-level network and scheduler tuning bundle (Stage~9 \emph{TIER~0}: GRO off, expanded TCP buffers, low-swap, \texttt{busy\_poll}) and a runtime NIC tuning bundle (Stage~15: enlarged RX ring, Receive Flow Steering, deferred NAPI) --- the latter persisted as a new \texttt{systemd} unit \texttt{dllama-runtime-tweaks.service} --- and quantify the throughput contribution of each.
@@ -205,7 +232,7 @@ The investigation comprised three intertwined tracks:
 \end{figure}
 
 The state of the art for distributed CPU LLM inference falls into three approaches:
-\begin{itemize}[nosep]
+\begin{itemize}
   \item \textbf{Tensor parallelism} (\texttt{distributed-llama}~\cite{tadych2024}): the model is sliced horizontally across attention heads, requiring an all-reduce per layer. Used in this work.
   \item \textbf{Pipeline parallelism} (\texttt{llama.cpp} RPC, \texttt{prima.cpp}~\cite{li2025prima}): layers are partitioned by depth across nodes, communication is point-to-point. Geerling~\cite{geerling2025} reports a 25$\times$ regression vs.\ single-node for \texttt{llama.cpp} RPC, confirming the network-overhead-dominated regime.
   \item \textbf{Mixture-of-Experts (MoE)} models~\cite{jiang2024,qwen3}: a parameter-efficient architecture that activates a sparse subset of weights per token. Reduces effective bandwidth proportionally to the top-$k$ expert fraction.
@@ -260,7 +287,7 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 \end{table}
 
 \paragraph{Per-node specifications.}
-\begin{itemize}[nosep]
+\begin{itemize}
   \item SoC: Broadcom BCM2712 (4$\times$ Arm Cortex-A76 @ 2.4 GHz, ARMv8.2-A)
   \item Memory: 16 GB LPDDR4X @ 4267 MT/s, theoretical bandwidth $\approx$\textbf{17 GB/s}
   \item Storage: NVMe SSD via PCIe Gen 2 ($\approx$700 MB/s read)
@@ -297,7 +324,7 @@ For methodology we follow the MLPerf Inference v5.1 small-LLM track conventions~
 
 \subsection{Software stack}
 
-\begin{itemize}[nosep]
+\begin{itemize}
   \item \textbf{Inference engine}: \texttt{distributed-llama} v0.16.5 with eight framework patches (\S\ref{sec:patches}); four further bit-exact kernel and op-fusion optimisations follow in Stages~10--14.
   \item \textbf{Model}: Qwen3-30B-A3B Q40 (30B total parameters, 128 experts, top-$k$=8, $\sim$3B active per token).
   \item \textbf{HTTP front-end}: custom Python proxy (Flask + waitress) on \texttt{127.0.0.1:8000}, sanitising OpenAI-strict client requests.
@@ -311,7 +338,7 @@ We follow the MLPerf Inference v5.1 conventions~\cite{mlperf2025} for metric def
 
 \subsection{Metrics}
 
-\begin{itemize}[nosep]
+\begin{itemize}
   \item \textbf{Throughput (tok/s)}: generated tokens divided by total wall-clock time, including TTFT.
   \item \textbf{TTFT (Time-To-First-Token)}: latency from HTTP request to the first generated token, measured by issuing \texttt{max\_tokens=1}.
   \item \textbf{Prefill rate}: prompt tokens processed per second. Estimated as \texttt{prompt\_tokens / (total\_duration - decode\_time)}, where \texttt{decode\_time} is approximated from sustained-rate measurements.
@@ -352,7 +379,7 @@ We adopt the protocol recommended by MLPerf~\cite{mlperf2025}: \textbf{two warm-
 Recompiled with \texttt{CXXFLAGS="-O3 -flto -ffast-math -funroll-loops"} on each node. \texttt{LD\_PRELOAD=libjemalloc.so.2} added to all \texttt{systemd} units with \texttt{MALLOC\_CONF="narenas:4,tcache:true,dirty\_decay\_ms:30000"}.
 
 \subsection{Operating-system tuning}
-\begin{itemize}[nosep]
+\begin{itemize}
   \item CPU governor \texttt{performance} on all 4 nodes (\texttt{systemd} unit at boot).
   \item TCP BBR congestion control; \texttt{net.ipv4.tcp\_low\_latency=1}; \texttt{net.core.netdev\_budget=600}.
   \item \texttt{vm.overcommit\_memory=1}, \texttt{vm.swappiness=1} (lowered from the Pi~OS default of 60 in Stage~9 to keep \texttt{mlock}-ed weights resident; verified live at 1).
@@ -539,6 +566,7 @@ Prefill rate degrades slightly with prompt size (KV-cache growth and the attenti
 \begin{table}[H]
 \centering
 \caption{Sustained-load thermal measurements. Throttle threshold is 85$^\circ$C.}
+\label{tab:thermals}
 \begin{tabular}{lcc}
 \toprule
 \textbf{Node} & \textbf{Temperature} & \textbf{Throttling flags} \\
@@ -605,7 +633,7 @@ $\Delta$ vs.\ public ceiling (13.04) & --- & +7.45\% \\
 
 The same research round surfaced two further claims, both investigated and rejected:
 
-\begin{enumerate}[nosep]
+\begin{enumerate}
   \item \emph{\texttt{llamafile\_sgemm} guard fix} (upstream issue \#284, claimed +5--40\%): this gain had \emph{already} been captured in our base commit \texttt{92a20e2 ``perf: enable llamafile\_sgemm for single-token decode''} (2026-05-16), two days before this research round. Cannot be captured twice.
   \item \emph{ARM I8MM / Q4\_0\_4\_8 SMMLA repack} (claimed +20--30\%): the Cortex-A76 in the Pi~5 does \emph{not} support I8MM. Verified directly: \texttt{grep -c i8mm /proc/cpuinfo} returns 0 on all four nodes. Confirmed via llama.cpp issue \#10662. I8MM is an A78+ feature; the original claim was a factual error in the surveyed material and is documented here as a cautionary tale.
 \end{enumerate}
@@ -614,7 +642,7 @@ The same research round surfaced two further claims, both investigated and rejec
 
 The structured research round produced a ranked plan of further candidates:
 
-\begin{itemize}[nosep]
+\begin{itemize}
   \item \textbf{Tier 2 --- Close Phase B (Option C, $\sim$40 LOC)}: the \texttt{opt-b5b6-tiled-sync} branch carries 562 LOC of async-sync orchestrator, tiled matmul wrapper, and the \texttt{--tile-sync K} flag, all compiled but unwired. Estimated additional +5--12\%; high integration risk (the same code path that broke the cluster during PGO and \texttt{isolcpus} experiments).
   \item \textbf{Tier 3a --- Hierarchical 2-stage all-reduce}: with $N=4$ nodes, butterfly recursive-halving needs $\log_2(4)=2$ rounds instead of the $2(N-1)=6$ rounds of the current ring. Estimated +10--13\%, $\sim$80--120 LOC.
   \item \textbf{Tier 3b --- Pre-attention expert prediction} (arXiv:2511.10676): specific to Qwen3-30B-A3B, reported 94.69\% top-$k$ accuracy. Estimated +8--15\%, $\sim$250 LOC, low risk (fallback to on-demand load).
@@ -640,7 +668,7 @@ The Qwen3-MoE per-expert FFN ops are $w_1$-matmul $\to$ $w_3$-matmul $\to$ silu(
 \subsection{Stage 11 --- Rounds 3 and 4 (Linux papers research and ceiling investigation)}
 
 We carried out four parallel research threads:
-\begin{enumerate}[nosep]
+\begin{enumerate}
   \item Linux Plumbers / SOSP / OSDI / EuroSys / USENIX ATC papers 2024--2026.
   \item eBPF / XDP / AF\_XDP / io\_uring / kernel-bypass.
   \item Linux scheduler (EEVDF in 6.6+) tunings.
@@ -802,25 +830,25 @@ We rewrote it as a single NEON loop that holds the values in registers throughou
 \noindent\textbf{Input:} output buffer $y[0..n-1]$ (in-place), multiplier buffer $m[0..n-1]$, thread index $t$, thread count $T$\\
 \textbf{Output:} $y[i] \leftarrow \mathrm{silu}(y[i]) \cdot m[i]$ for all $i$ in this thread's split\\
 \textbf{Invariant:} arithmetic sequence (\texttt{vrecpeq\_f32}~+~one Newton--Raphson~+~multiply) is byte-identical to the prior two-pass implementation; only the intermediate writeback to \texttt{y[i]} between the two passes is removed.
-\vspace{4pt}
-\begin{tabbing}
-\hspace{1em}\=\hspace{1.5em}\=\hspace{2em}\=\kill
-1: \> $(\textit{start}, \textit{end}) \gets$ \textsc{Split\_Threads}$(n, T, t)$ \\
-2: \> \textbf{for} $i \gets \textit{start}$ \textbf{to} $\textit{end}-4$ \textbf{step} 4 \textbf{do} \> \> \textit{// NEON inner loop, 4 lanes} \\
-3: \> \> $\mathbf{x} \gets$ \texttt{vld1q\_f32}$(y + i)$ \> \textit{// 1 vector load} \\
-4: \> \> $\mathbf{mv} \gets$ \texttt{vld1q\_f32}$(m + i)$ \> \textit{// 1 vector load} \\
-5: \> \> $\mathbf{e} \gets$ \texttt{expf\_neon}$(-\mathbf{x})$ \\
-6: \> \> $\mathbf{d} \gets \mathbf{1} + \mathbf{e}$ \\
-7: \> \> $\mathbf{r} \gets$ \texttt{vrecpeq\_f32}$(\mathbf{d})$ \> \textit{// reciprocal estimate} \\
-8: \> \> $\mathbf{r} \gets \mathbf{r} \cdot (\mathbf{2} - \mathbf{d} \cdot \mathbf{r})$ \> \textit{// 1 Newton--Raphson iteration} \\
-9: \> \> $\mathbf{silu} \gets \mathbf{x} \cdot \mathbf{r}$ \\
-10:\> \> $\mathbf{out} \gets \mathbf{silu} \cdot \mathbf{mv}$ \\
-11:\> \> \texttt{vst1q\_f32}$(y + i, \mathbf{out})$ \> \textit{// 1 vector store; no intermediate write} \\
-12:\> \textbf{end for} \\
-13:\> \textbf{for} remaining $i < \textit{end}$ \textbf{do} \> \> \textit{// scalar tail} \\
-14:\> \> $y[i] \gets (y[i] / (1 + e^{-y[i]})) \cdot m[i]$ \\
-15:\> \textbf{end for}
-\end{tabbing}
+\vspace{6pt}
+{\setlength{\tabcolsep}{0pt}\renewcommand{\arraystretch}{1.3}%
+\noindent\begin{tabular}{@{}r@{\hspace{0.8em}}l@{\hspace{1.8em}}l@{}}
+1:  & $(\textit{start}, \textit{end}) \gets$ \textsc{Split\_Threads}$(n, T, t)$ & \\
+2:  & \textbf{for} $i \gets \textit{start}$ \textbf{to} $\textit{end}-4$ \textbf{step} 4 \textbf{do} & \textit{// NEON inner loop, 4 lanes} \\
+3:  & \hspace{1.2em}$\mathbf{x} \gets$ \texttt{vld1q\_f32}$(y + i)$ & \textit{// 1 vector load} \\
+4:  & \hspace{1.2em}$\mathbf{mv} \gets$ \texttt{vld1q\_f32}$(m + i)$ & \textit{// 1 vector load} \\
+5:  & \hspace{1.2em}$\mathbf{e} \gets$ \texttt{expf\_neon}$(-\mathbf{x})$ & \\
+6:  & \hspace{1.2em}$\mathbf{d} \gets \mathbf{1} + \mathbf{e}$ & \\
+7:  & \hspace{1.2em}$\mathbf{r} \gets$ \texttt{vrecpeq\_f32}$(\mathbf{d})$ & \textit{// reciprocal estimate} \\
+8:  & \hspace{1.2em}$\mathbf{r} \gets \mathbf{r} \cdot (\mathbf{2} - \mathbf{d} \cdot \mathbf{r})$ & \textit{// 1 Newton--Raphson iteration} \\
+9:  & \hspace{1.2em}$\mathbf{silu} \gets \mathbf{x} \cdot \mathbf{r}$ & \\
+10: & \hspace{1.2em}$\mathbf{out} \gets \mathbf{silu} \cdot \mathbf{mv}$ & \\
+11: & \hspace{1.2em}\texttt{vst1q\_f32}$(y + i, \mathbf{out})$ & \textit{// 1 vector store; no intermediate write} \\
+12: & \textbf{end for} & \\
+13: & \textbf{for} remaining $i < \textit{end}$ \textbf{do} & \textit{// scalar tail} \\
+14: & \hspace{1.2em}$y[i] \gets (y[i] / (1 + e^{-y[i]})) \cdot m[i]$ & \\
+15: & \textbf{end for} & \\
+\end{tabular}\par}
 \hrule\vspace{2pt}
 \end{minipage}
 \end{figure}
@@ -850,7 +878,7 @@ The \texttt{writeMany}/\texttt{readMany} loop in \texttt{nn-network.cpp} capped 
 \paragraph{Stage 15 --- Runtime kernel tweaks persisted via systemd (commit \texttt{edbc4ce}).}
 Three NIC/scheduler knobs sit above the noise floor when combined but are runtime-only:
 
-\begin{itemize}[nosep]
+\begin{itemize}
   \item RX ring buffer 512 $\rightarrow$ 4096 (\texttt{ethtool -G eth0 rx 4096 tx 2048}).
   \item Receive Flow Steering with \texttt{rps\_cpus=0xe} (CPU 1--3), \texttt{rps\_flow\_cnt=4096}, \texttt{net.core.rps\_sock\_flow\_entries=32768} --- spreads softirq RX off CPU 0.
   \item \texttt{napi\_defer\_hard\_irqs=2} + \texttt{gro\_flush\_timeout=20us} for low-latency NAPI batching.
@@ -1033,7 +1061,7 @@ For Qwen3-30B-A3B (128 experts, top-$k$=8), the activation ratio is $8/128 = 6.2
 \end{table}
 
 \subsection{Limitations}
-\begin{enumerate}[nosep]
+\begin{enumerate}
   \item Energy efficiency was not measured directly (estimated $\sim$2~J/token for the four-node system from typical Pi~5 power figures; see Threats to Validity). An external USB power meter (e.g.\ UM34C) is required for an accurate figure; the \texttt{vcgencmd pmic\_read\_adc} interface does not capture the full 5~V rail.
   \item Prefill is severe ($\sim$2 min for 2K-token prompts, projected $\sim$20 min for 20K), making the system unsuitable for agentic workloads with large system prompts. Speculative decoding (Llama 3.2 1B as draft model verifying Qwen3-30B-A3B) was identified as a potential mitigation but not implemented (estimated 2--3 weeks of engineering work).
   \item Throughput was measured single-client. Multi-client goodput under SLO~\cite{zhong2024distserve} was not characterised.
@@ -1047,7 +1075,7 @@ Concurrently with this work, Zheng \emph{et al.}~\cite{halo2026} introduced HALO
 \subsection{Future work: alternative model candidates}
 \label{sec:future-models}
 For applications prioritising Hermes Agent compatibility, two candidates stand out:
-\begin{itemize}[nosep]
+\begin{itemize}
   \item \textbf{Llama-3-Groq-8B-Tool-Use}~\cite{groq2024tooluse}: dense 8B model fine-tuned for function calling, achieving 89.06\% on the Berkeley Function-Calling Leaderboard (BFCL). Projected throughput $\sim$14.5 tok/s.
   \item \textbf{OLMoE-1B-7B}~\cite{muennighoff2024olmoe}: smaller MoE (7B total / 1B active), projected to reach $\sim$19.6 tok/s on this hardware. Tool-calling accuracy untested.
 \end{itemize}
@@ -1125,12 +1153,23 @@ On the decode metric used by the public ceiling, the cluster reaches \textbf{15.
 
 The Stage~12--15 commits of the 2026-05-18 investigation (\texttt{64ef787}, \texttt{1af175c}, \texttt{f8ed9d2}, \texttt{edbc4ce}), combined with the post-publication updates of Stages~9--11 (\texttt{d50d30c}, \texttt{106eab3}, \texttt{162cd83}, \texttt{850d1e1}), represent a $+5.31\%$ improvement over the original Stage~8 baseline of 13.720~tok/s and a maintainable, fully bit-exact production state. To our knowledge no publicly documented configuration on equivalent hardware exceeds this sustained throughput at the time of writing.
 
-The two most consequential bit-exact source-level wins of the 2026-05-18 investigation run counter to received wisdom on the same code base: (i) removing the \texttt{\_\_builtin\_prefetch} calls from the matmul inner loop yields a measurable improvement, because the Cortex-A76's hardware-prefetcher stride detector outperforms the manual hints (Stage~12); and (ii) the previous SILU+MUL fusion (Stage~10) was a thin two-call wrapper that kept the intermediate result resident in memory, so rewriting it as a single-pass NEON loop that holds the values in registers throughout achieves $+1.5\%$ at no quality cost (Stage~13). Both are reminders that ``well-known'' micro-optimisations on a hot kernel should be re-measured against the specific microarchitecture rather than carried forward from older platforms.
+\subsection{What moved the needle}
+
+The two most consequential bit-exact source-level wins of the 2026-05-18 investigation run counter to received wisdom on the same code base:
+
+\begin{itemize}
+  \item \textbf{Removing the \texttt{\_\_builtin\_prefetch} hints} from the matmul inner loop (Stage~12) yields a measurable improvement: the Cortex-A76's hardware-prefetcher stride detector outperforms the manual hints.
+  \item \textbf{Rewriting the SILU+MUL fusion as a single pass} (Stage~13): the earlier fusion (Stage~10) was a thin two-call wrapper that kept the intermediate result resident in memory. Holding the values in NEON registers throughout achieves $+1.5\%$ at no quality cost.
+\end{itemize}
+
+\noindent Both are reminders that ``well-known'' micro-optimisations on a hot kernel should be re-measured against the specific microarchitecture rather than carried forward from older platforms.
 
 The single remaining software direction we have identified as likely to lift sustained throughput further within the bit-exact constraint is wiring the Phase~B Async-TP foundation already shipped in the repository (Section~\ref{sec:future-work-halo}--Future Work). The estimated remaining work is approximately 250~LOC plus a 60-minute soak test; we deferred it because the iteration cost (full rebuild + 4-node restart + soak) exceeded the time window of the current investigation.
 
+\subsection{Operating-system tuning}
+
 Reaching this ceiling required adapting the host operating system as heavily as the application itself. Across the four nodes we applied:
-\begin{itemize}[nosep,leftmargin=1.4em]
+\begin{itemize}
   \item CPU governor \texttt{performance} at the nominal 2.4~GHz.
   \item \texttt{SDRAM\_BANKLOW=1} in the bootloader EEPROM --- a firmware-level memory-interleave change that lifted effective read bandwidth from 8.3 to 12.5~GB/s per node, bit-exact ($+5.9\%$).
   \item \texttt{--nthreads 3} (not 4), freeing one core, with the Ethernet IRQ and Receive Packet Steering pinned to that freed core (CPU~3).
@@ -1144,6 +1183,8 @@ Reaching this ceiling required adapting the host operating system as heavily as 
 
 The operating environment must be considered in full: the clean-room experiment of Section~\ref{sec:cleanroom-2026-05-22} showed that even a co-located observability stack (Grafana Alloy and cAdvisor) silently taxes decode throughput by $\sim$5\%. Every lever was held to the bit-exact constraint; several plausible candidates (transparent huge pages, jumbo frames, NUMA interleave, software prefetch, PGO) were tested and \emph{reverted} as neutral or harmful on this DRAM-bandwidth-bound workload.
 
+\subsection{The memory wall}
+
 Taken together, these results drive a four-node Raspberry Pi~5 cluster to the physical ceiling of its LPDDR4X memory subsystem. At 49\% backend-stalled cycles and roughly 11.4 of the $\sim$17~GB/s vendor bandwidth realised per node, decode is memory-bandwidth-bound: the bytes moved per token are fixed by the model and its quantisation, and no further bit-exact \emph{reduction} of that traffic is available --- the one lever left (Async-TP) overlaps communication with computation rather than moving fewer bytes. The telemetry experiment of Section~\ref{sec:cleanroom-2026-05-22} sharpens the point: even the few percent of DRAM bandwidth consumed by a background monitoring agent is directly visible in the decode rate, while the compute-bound prefill phase is untouched.
 
 We have, in short, reached the \emph{memory wall} that the Raspberry~Pi~5 presents. To our knowledge, \textbf{15.143~tok/s} is the highest rate at which a 30-billion-parameter Mixture-of-Experts model has been driven on this hardware class --- bit-exact, with no overclock and no loss of output quality. Pushing past it is no longer a software problem but a silicon one: it requires memory with more bandwidth.
@@ -1152,7 +1193,22 @@ We have, in short, reached the \emph{memory wall} that the Raspberry~Pi~5 presen
 
 The only software lever above the noise floor under bit-exact constraints is \textbf{Async Tensor Parallelism} (\emph{Async-TP}), the CPU-port of the same overlap concept that PyTorch's TorchTitan project introduced for NVIDIA H100 + NVLink clusters in late 2024~\cite{torchtitan2024} (reported $+20$--$29\%$ forward-pass speedup, $\sim$8\% end-to-end on Llama-3 7B and 70B).
 
-The Phase~B foundation already in this repository (\texttt{nn-async-sync.\{cpp,hpp\}}, \texttt{nn-tile-signal.hpp}, \texttt{matmul\_Q80\_Q40\_F32\_tiled}, \texttt{--tile-sync K} CLI flag, instrumentation counters) constitutes the producer/consumer plumbing; the remaining wiring (\emph{Option~C}) attaches the drain thread to specific Q80$\times$Q40 matmul operations whose output is the next sync's source pipe, dispatches to the tiled matmul variant so that tile-completion signals \texttt{ctx->signals[t].signalReady()} arrive while the kernel is still executing further tiles, and converts the subsequent sync into a \texttt{nnAsyncSyncJoin()} that blocks only on tiles not yet shipped. Pre-merge gates: a 50~ms watchdog timeout in the drain thread, a \texttt{static\_assert(d~\%~K~==~0)} runtime check, bit-exact 100-token validation at \texttt{seed=42}, and a 60-minute soak test.
+The Phase~B foundation already in this repository (\texttt{nn-async-sync.\{cpp,hpp\}}, \texttt{nn-tile-signal.hpp}, \texttt{matmul\_Q80\_Q40\_F32\_tiled}, \texttt{--tile-sync K} CLI flag, instrumentation counters) constitutes the producer/consumer plumbing. The remaining wiring (\emph{Option~C}) has three steps:
+
+\begin{enumerate}
+  \item attach the drain thread to specific Q80$\times$Q40 matmul operations whose output is the next sync's source pipe;
+  \item dispatch to the tiled matmul variant so that tile-completion signals \texttt{ctx->signals[t].signalReady()} arrive while the kernel is still executing further tiles;
+  \item convert the subsequent sync into a \texttt{nnAsyncSyncJoin()} that blocks only on tiles not yet shipped.
+\end{enumerate}
+
+\noindent Four pre-merge gates guard the change:
+
+\begin{itemize}
+  \item a 50~ms watchdog timeout in the drain thread;
+  \item a \texttt{static\_assert(d~\%~K~==~0)} runtime check;
+  \item bit-exact 100-token validation at \texttt{seed=42};
+  \item a 60-minute soak test.
+\end{itemize}
 
 The estimate in the in-repo \texttt{docs/PHASE-B-PLAN.md} for this integration is approximately 250~LOC across three files (\texttt{nn-cpu-ops.cpp}, \texttt{nn-executor.cpp}, \texttt{nn-network.cpp}) plus an additional consideration that the Qwen3-MoE feed-forward block is \emph{not} a direct matmul$\to$sync chain (an 8-expert \texttt{mergeAdd} stands between \texttt{block\_matmul\_w2} and the residual-stream sync), which adds further wiring complexity. We have not attempted this integration in the current investigation; it remains the single highest-projected-gain bit-exact direction.
 
@@ -1169,12 +1225,21 @@ We claim ``bit-exact'' improvement at every stage on the basis of SHA-256 hashin
 The validation is meaningful only against the project's own canonical baseline, not against an arbitrary third-party reference build with different flags. Any future rebuild of \texttt{dllama} on this cluster that changes compiler flags, kernel version, or NEON dispatch must re-run the bit-exact validation against the new baseline.
 
 \paragraph{Internal validity.}
-All benchmarks are paired ($n$=20 after two discarded warm-up runs, fixed prompt, \texttt{temperature}=0, single client, idle background workload of Grafana Alloy and cAdvisor only). We subsequently measured this nominally idle telemetry to be non-negligible on the bandwidth-bound decode phase (Section~\ref{sec:cleanroom-2026-05-22}, $+5.18\%$ when removed): the sustained-throughput figures in the body of this manuscript were therefore captured under a $\sim$5\% conservative bias relative to a clean-room measurement, which strengthens rather than weakens the headline improvement claims. The cluster was cold-started for $\geq 60$ s before each benchmark, with all four nodes thermally stable in the 54--56~$^{\circ}$C range (Table on sustained-load thermals) and throttle bit 0x0 (no DVFS throttle event recorded).
+All benchmarks are paired ($n$=20 after two discarded warm-up runs, fixed prompt, \texttt{temperature}=0, single client, idle background workload of Grafana Alloy and cAdvisor only). We subsequently measured this nominally idle telemetry to be non-negligible on the bandwidth-bound decode phase (Section~\ref{sec:cleanroom-2026-05-22}, $+5.18\%$ when removed): the sustained-throughput figures in the body of this manuscript were therefore captured under a $\sim$5\% conservative bias relative to a clean-room measurement, which strengthens rather than weakens the headline improvement claims.
+
+The cluster was cold-started for $\geq 60$ s before each benchmark, with all four nodes thermally stable in the 54--56~$^{\circ}$C range (Table~\ref{tab:thermals}) and throttle bit 0x0 (no DVFS throttle event recorded).
 
 Standard deviations of individual stages range from 0.030 to 0.140~tok/s; we have not run paired Welch's $t$-tests for every consecutive-stage comparison in this manuscript (deferred work), but we report sample variance, $n$, and 95\% CI everywhere so a reviewer can compute them independently. The headline $+10.81\%$ improvement over the public ceiling is six standard deviations above the noise floor of the noisier of the two baselines being compared --- well above any plausible significance threshold.
 
 \paragraph{External validity.}
-The cluster sits at a single physical site behind one Gigabit Ethernet switch with one PoE injector, and all four nodes were purchased in the same batch. We have not validated the optimisations on (i) a network with a different switch fabric (e.g.\ store-and-forward vs.\ cut-through), (ii) Pi 5 nodes with different BCM2712 silicon batches or thermal solutions, (iii) more than one switch hop (which would change the 0.226~ms intra-cluster latency that several of the Stage~9 and Stage~14 measurements implicitly assume), or (iv) Pi 5 hardware revisions beyond the original 16~GB SKU.
+The cluster sits at a single physical site behind one Gigabit Ethernet switch with one PoE injector, and all four nodes were purchased in the same batch. We have not validated the optimisations on:
+
+\begin{itemize}
+  \item a network with a different switch fabric (e.g.\ store-and-forward vs.\ cut-through);
+  \item Pi 5 nodes with different BCM2712 silicon batches or thermal solutions;
+  \item more than one switch hop, which would change the 0.226~ms intra-cluster latency that several of the Stage~9 and Stage~14 measurements implicitly assume;
+  \item Pi 5 hardware revisions beyond the original 16~GB SKU.
+\end{itemize}
 
 Nor have we re-run on the Pi~5 8~GB SKU (the configuration of the public-ceiling reference): the 16~GB SKU's larger memory for \texttt{jemalloc} tcache and OS file-cache plausibly accounts for part of the gap to the 8~GB record. This is precisely why we do not rest the claim on the cross-SKU comparison: the confound-free figure is the controlled same-16~GB A/B (Section~\ref{sec:cleanroom-2026-05-22}: $+$5.6\% from our source code, $+$15.2\% total over vanilla on identical silicon), and the $+$16.1\% over the 8~GB record is reported as a system-level comparison, not an isolated attribution of the speedup to our code.
 
@@ -1244,7 +1309,7 @@ The most consequential lesson at this intermediate snapshot, in our view, is tha
 \bibitem{geerling_aibench47} J.\ Geerling, ``Qwen3-30B-A3B on Raspberry Pi 5 16GB,'' \texttt{geerlingguy/ai-benchmarks} issue \#47, 2026. \url{https://github.com/geerlingguy/ai-benchmarks/issues/47}
 \end{thebibliography}
 
-\vfill
+\bigskip
 \begin{center}
 \rule{0.6\textwidth}{0.4pt}\\[0.3cm]
 \small\itshape Document generated 22 May 2026 from the operational cluster. Hellomatik · Raspberry Pi Cluster Lab. Final result 15.143 tok/s decode, +16.1\% above the public ceiling (14.449 tok/s end-to-end sustained).

@@ -1,9 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this work, please cite it as below."
 title: >-
-  Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster:
-  an empirical evaluation of frameworks, optimisations and failure
-  modes for edge LLM serving
+  Pushing Four Raspberry Pis to the Memory Wall: Bit-Exact 30B
+  Mixture-of-Experts Inference, +16% over the Public Record
 authors:
   - family-names: "Correa Villa"
     given-names: "Daniel"
@@ -22,12 +21,13 @@ keywords:
   - bit-exact-optimization
 abstract: >-
   A production-grade distributed inference cluster running Qwen3-30B-A3B
-  (Mixture of Experts, Q40) at ~14.3-14.4 tokens/second sustained on 4x
-  Raspberry Pi 5 16GB, built on a patched fork of distributed-llama
-  v0.16.5. The work documents twelve source-level fixes, ARM-specific
+  (Mixture of Experts, Q40) at 15.143 tok/s decode (+16.1% over the public
+  ceiling of 13.04 tok/s; b4rtaz #255) and 14.449 tok/s end-to-end sustained
+  on 4x Raspberry Pi 5 16GB, built on a patched fork of distributed-llama
+  v0.16.5. The work documents twelve source-level changes, ARM-specific
   compiler flags, kernel/network tuning and a WFE/SEV barrier, all
   validated bit-exact (SHA-256 of deterministic output) against the
-  unoptimised baseline, with n=20-40 benchmarks and 95% confidence
+  unoptimised baseline, with n=20 benchmarks and 95% confidence
   intervals. It also catalogues the failure modes (frameworks and
   techniques tried and rejected with measurements) that define the
   practical ceiling of CPU-only MoE inference on ARM SBC hardware.
