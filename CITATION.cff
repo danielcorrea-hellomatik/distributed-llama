@@ -9,8 +9,8 @@ authors:
 version: "1.0.0"
 date-released: "2026-05-21"
 license: MIT
-url: "https://github.com/danielcorrea-hellomatik/distributed-llama"
-repository-code: "https://github.com/danielcorrea-hellomatik/distributed-llama"
+url: "https://github.com/hellomatik-org/distributed-llama"
+repository-code: "https://github.com/hellomatik-org/distributed-llama"
 keywords:
   - distributed-inference
   - edge-llm

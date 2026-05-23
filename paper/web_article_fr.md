@@ -1,6 +1,6 @@
 <!-- paper-url: https://github.com/hellomatik-org/distributed-llama/blob/kernel-opt-t02/paper/main_en.pdf -->
 
-Un modèle Mixture-of-Experts de 30 milliards de paramètres (Qwen3-30B-A3B) tourne sur **quatre cartes Raspberry Pi 5** (matériel CPU uniquement, sans GPU ni NPU) à **15,143 tok/s en décodage** : bit-exact et **+16,1 % au-dessus du meilleur résultat publiquement documenté** pour ce modèle et cette classe de matériel (13,04 tok/s, b4rtaz #255). Il s'agit d'une synthèse technique condensée de notre rapport ; l'article complet (chaque tableau, figure et log brut) est à un clic.
+Un modèle Mixture-of-Experts de 30 milliards de paramètres (Qwen3-30B-A3B) tourne sur **quatre cartes Raspberry Pi 5** (matériel CPU uniquement, sans GPU ni NPU) à **15,143 tok/s en décodage** : bit-exact et **+16,1 % au-dessus du meilleur résultat publiquement documenté** pour ce modèle et cette classe de matériel (13,04 tok/s, b4rtaz #255). Sur un silicium 16 Go identique, le même résultat représente **+15,2 %** par rapport à la version vanilla de `distributed-llama` (13,15 → 15,143 tok/s) — un chiffre sans biais attribuable à notre seul travail logiciel et de configuration ; la comparaison inter-SKU ne comporte elle non plus aucun biais matériel mesurable, puisque la version vanilla sur notre cluster 16 Go atteint 13,15 tok/s, dans le bruit de mesure du record 8 Go. Il s'agit d'une synthèse technique condensée de notre rapport ; l'article complet (chaque tableau, figure et log brut) est à un clic.
 
 ## Résultats en un coup d'œil
 
@@ -8,6 +8,7 @@ Un modèle Mixture-of-Experts de 30 milliards de paramètres (Qwen3-30B-A3B) tou
 |---|---|
 | Débit en décodage (vs le plafond public) | **15,143 tok/s** |
 | Amélioration vs b4rtaz #255 (13,04 tok/s, décodage) | **+16,1 %** |
+| Amélioration vs vanilla sur silicium 16 Go identique (sans biais) | **+15,2 %** |
 | Débit de service soutenu (prefill inclus) | 14,449 tok/s |
 | Time-to-first-token (TTFT) | 557 ms |
 | Bande passante DRAM par nœud (soutenue / plafond constructeur) | 11,4 / 17 GB/s |

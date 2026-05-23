@@ -1,6 +1,6 @@
 <!-- paper-url: https://github.com/hellomatik-org/distributed-llama/blob/kernel-opt-t02/paper/main_en.pdf -->
 
-A 30-billion-parameter Mixture-of-Experts model (Qwen3-30B-A3B) runs on **four Raspberry Pi 5 boards** — CPU-only hardware, no GPU, no NPU — at **15.143 tok/s decode**: bit-exact and **+16.1% above the highest publicly documented result** for this model and hardware class (13.04 tok/s, b4rtaz #255). This is a condensed technical write-up of our report; the full paper — every table, figure and raw log — is one click away.
+A 30-billion-parameter Mixture-of-Experts model (Qwen3-30B-A3B) runs on **four Raspberry Pi 5 boards** — CPU-only hardware, no GPU, no NPU — at **15.143 tok/s decode**: bit-exact and **+16.1% above the highest publicly documented result** for this model and hardware class (13.04 tok/s, b4rtaz #255). On identical 16 GB silicon the same result is **+15.2%** over the vanilla `distributed-llama` baseline (13.15 → 15.143 tok/s) — a confound-free figure attributable to our software and configuration alone; the cross-SKU comparison carries no measurable hardware confound either, since vanilla on our 16 GB cluster measures 13.15 tok/s, within run-to-run noise of the 8 GB record. This is a condensed technical write-up of our report; the full paper — every table, figure and raw log — is one click away.
 
 ## Results at a glance
 
@@ -8,6 +8,7 @@ A 30-billion-parameter Mixture-of-Experts model (Qwen3-30B-A3B) runs on **four R
 |---|---|
 | Decode throughput (vs the public ceiling) | **15.143 tok/s** |
 | Improvement over b4rtaz #255 (13.04 tok/s, decode) | **+16.1%** |
+| Improvement over vanilla on identical 16 GB silicon (confound-free) | **+15.2%** |
 | Sustained serving throughput (prefill included) | 14.449 tok/s |
 | Time-to-first-token (TTFT) | 557 ms |
 | Per-node DRAM bandwidth (sustained / vendor ceiling) | 11.4 / 17 GB/s |

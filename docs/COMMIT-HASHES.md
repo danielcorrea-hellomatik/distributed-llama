@@ -1,7 +1,7 @@
 # Stage → Commit Mapping (pi5-cluster branch)
 
 Reproducibility reference for the technical paper `paper/main_en.tex`.
-All commits live on the `pi5-cluster` branch of `danielcorrea-hellomatik/distributed-llama` (this fork).
+All commits live on the `pi5-cluster` branch of `hellomatik-org/distributed-llama` (this fork).
 
 ## Model artefacts (verified SHA-256)
 
@@ -38,7 +38,7 @@ Identical hash expected on all 4 nodes (model is mmap'd from local NVMe per node
 
 1. Clone fork at the commit of interest:
    ```bash
-   git clone https://github.com/danielcorrea-hellomatik/distributed-llama
+   git clone https://github.com/hellomatik-org/distributed-llama
    cd distributed-llama
    git checkout <commit-hash>
    ```

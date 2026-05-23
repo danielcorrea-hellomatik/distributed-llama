@@ -565,7 +565,7 @@ flowchart LR
 For a brand-new node:
 
 ```bash
-ssh rpi@new-node 'bash <(curl -s https://raw.githubusercontent.com/danielcorrea-hellomatik/distributed-llama/pi5-cluster/deploy/scripts/install-node.sh)'
+ssh rpi@new-node 'bash <(curl -s https://raw.githubusercontent.com/hellomatik-org/distributed-llama/pi5-cluster/deploy/scripts/install-node.sh)'
 ```
 
 The install script applies all 9 patches, the Makefile flags, the systemd units, the sysctl configuration, the NIC tuning service and downloads the Qwen3-30B-A3B Q40 model.
@@ -613,7 +613,7 @@ If this work is useful in academic context, please cite it as:
   author = {Correa Villa, Daniel},
   title  = {Distributed LLM Inference on a 4-Node Raspberry Pi 5 Cluster: An Empirical Evaluation of Frameworks, Bit-Exact Optimisations, and Failure Modes for Edge Mixture-of-Experts Serving},
   year   = {2026},
-  url    = {https://github.com/danielcorrea-hellomatik/distributed-llama}
+  url    = {https://github.com/hellomatik-org/distributed-llama}
 }
 ```
 

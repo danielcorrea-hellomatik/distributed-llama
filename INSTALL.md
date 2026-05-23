@@ -59,7 +59,7 @@ echo '/swapfile_4g none swap sw,pri=10 0 0' | sudo tee -a /etc/fstab
 
 ```bash
 cd ~
-git clone -b pi5-cluster https://github.com/danielcorrea-hellomatik/distributed-llama.git
+git clone -b pi5-cluster https://github.com/hellomatik-org/distributed-llama.git
 cd distributed-llama
 ```
 
