@@ -151,7 +151,7 @@ Vanilla vs.\ optimised ($n{=}5{\times}256$) & identical decode; software improve
 \texttt{nthreads} sweep (clean-room, $n{=}8$) & optimum at 4; the 4th thread's compute gain outweighs net-rx contention & 5.36 / 7.20 / \textbf{8.36} \\
 Bottleneck decomposition (PMU + timing) & 87\% compute+memory, 13\% network; $\approx$10.1 GB/s/node; 0.81 IPC & --- \\
 Tile-sync (Phase~B) $K{=}$2/4/8 & no overlap benefit in batch-1 decode & 7.29/7.40/7.12 \\
-Attribution vs.\ clean upstream (clean-room A/B) & fork ties stock at the four-thread optimum; contribution $\approx$0 & 8.08 / 8.09 \\
+Attribution vs.\ clean upstream (clean-room A/B) & fork statistically indistinguishable from stock at the four-thread optimum (Welch $p{=}0.59$) & 8.08 / 8.09 \\
 Mid-investigation benchmark ($n{=}20$, 3 threads) & earlier figure & 7.591$\pm$0.018 \\
 Clean-room benchmark ($n{=}20$, 4 threads) & headline figure, tight 95\% CI & \textbf{8.32 [8.30, 8.34]} \\
 Decode vs.\ context length (per-token timing) & falls linearly with KV growth; $t(L){=}117{+}0.0174L$~ms, $R^2{=}0.999$ & 8.4$\,\to\,$5.0 \\
@@ -540,14 +540,14 @@ Source contribution, prefill & large & \textbf{86\%} & both compute-bound \\
 
 \section{Optimisation in layers, and generalisation}
 \label{sec:layers}
-The results above are best read as a layered account of where inference performance comes from. We distinguish three layers:
+The results above are best read as a layered account of where inference performance comes from --- three layers, top to bottom:
 \begin{itemize}
-  \item \emph{Hardware and firmware}: the SoC, the memory subsystem and its bandwidth ceiling, the interconnect, and bootloader/EEPROM settings (here, SDRAM bank-low interleaving). This sets the physical ceiling.
-  \item \emph{Operating system}: the kernel and its parameters (governor, page size, network sysctls, interrupt steering, scheduler) and the runtime configuration (thread count, allocator, affinity). This decides how much of the ceiling the workload actually reaches.
-  \item \emph{Application software}: the inference framework, its compute kernels, compiler flags, and algorithms (operator fusion, quantisation, speculative decoding).
+  \item \emph{Hardware and firmware}: the SoC, the memory subsystem and its bandwidth ceiling, the interconnect, and EEPROM settings (here, SDRAM bank-low interleaving) --- the physical ceiling.
+  \item \emph{Operating system}: kernel parameters (governor, page size, network sysctls, scheduler) and runtime (thread count, allocator, affinity) --- how much of the ceiling the workload reaches.
+  \item \emph{Application software}: the framework, its compute kernels, compiler flags, and algorithms (operator fusion, quantisation, speculative decoding).
 \end{itemize}
 
-The single rule that organises every result in this report is: \emph{profile to locate the binding constraint, then spend optimisation effort in the layer where it lives.} For dense decode the constraint is memory bandwidth, so the gains are in the hardware and operating-system layers --- the fourth thread alone moves decode by 16\%, and the firmware interleave and a newer kernel raise the floor further, for 29\% over the prior record on the same model and framework. Rewriting the application kernels, by contrast, moves it by approximately zero (Section~\ref{sec:attribution}). The same kernels, applied to a compute-bound workload, do pay: 86\% on prefill and 15.2\% on the Mixture-of-Experts decode (Table~\ref{tab:layermap}).
+The rule that organises every result here --- a restatement of the roofline view, not a new idea --- is: \emph{profile the binding constraint, then optimise the layer where it lives.} For dense decode the constraint is memory bandwidth, so the gains live in hardware and the operating system: the fourth thread alone moves decode 16\%, with the firmware interleave and a newer kernel raising the floor to 29\% over the prior record, while rewriting the application kernels makes no measurable difference (Welch $p{=}0.59$, Section~\ref{sec:attribution}). The same kernels do pay on a compute-bound workload --- 86\% on prefill, 15.2\% on MoE decode (Table~\ref{tab:layermap}) --- and we expect the method, not the prescription, to carry to other inference software (GPU serving, detection models); validating that is future work.
 
 \begin{table}[H]
 \centering\small
@@ -563,8 +563,6 @@ Prefill (both) & compute (batched matmuls) & application software \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-\paragraph{Generalisation (our position).} The roofline and layer lens is workload-general, and we expect the method --- profile the binding constraint, then optimise the layer in which it lives --- rather than the prescription to carry to other inference software. Validating it on other stacks, for example GPU model serving or object-detection models, is future work.
 
 \section{Conclusion}
 DeepSeek-R1-Distill-8B sustains 8.32~tok/s short-context decode on four 16~GB Raspberry~Pi~5 boards at four threads per node ($n{=}20$, 95\% CI $[8.30,8.34]$), bit-exact, the best published figure for this model on this hardware with \texttt{distributed-llama} under bit-exact constraints, and 29\% above the prior record. Decode is not constant, however: from per-token timing it falls roughly linearly as the KV-cache grows --- $t(L){=}117{+}0.0174\,L$~ms per token, $R^2{=}0.999$, prompt-independent --- to about 5.0~tok/s at a 5{,}000-token context, and the four-thread optimum holds at every context length. Attribution shows the result is multi-layer system engineering: the 29\% over the 2024 record is the cumulative effect of the full stack we built --- \texttt{distributed-llama} with our framework patches and kernel fusions, Linux kernel, scheduler and network tuning, SDRAM firmware, and four threads (the 16~GB boards share the 8~GB record's bandwidth and so contribute nothing) --- against an older, untuned baseline. For this dense workload the isolated movers are the thread count and the firmware; our compute-kernel rewrites and the NIC tuning, which lift the compute-bound MoE companion (+15.2\%) and prefill here (+86\%), contribute $\approx$0 to bandwidth-bound dense decode. Dense decode is bounded by LPDDR4X memory bandwidth (10.1 of 17~GB/s per node, 87\% of the per-token time on-node), and the contrast with the compute-bound Mixture-of-Experts model, where the same software yields 15\%, frames the bandwidth limit as a controlled comparison. The remaining lossless avenue is to emit more tokens per weight read; the adaptive speculative decoder does so where the output is predictable. Beyond that, dense-decode throughput on this hardware is a function of memory bandwidth, and further gains require hardware changes such as faster memory, a faster interconnect, or additional nodes. More broadly, inference performance is a three-layer stack --- hardware and firmware, operating system, application software --- and the productive optimisation is to profile the binding constraint and tune the layer in which it lives; on this workload that layer is the system rather than the kernels, and we expect the method, if not the prescription, to carry to other inference software.
