@@ -115,6 +115,136 @@ static void inference(AppInferenceContext *context) {
         predTotalTimeMs / ((float) nPredTokens));
 }
 
+// Lossless prompt-lookup speculative decoding (bit-exact under greedy).
+// Each step drafts up to K tokens by matching the last specMin tokens against the
+// existing sequence (PLD), then verifies ALL drafts in ONE batched forward. Because
+// decode is memory-bandwidth-bound, that single weight read is amortized over K+1
+// positions. Only tokens equal to the model's own argmax are emitted, so the output
+// is byte-identical to plain greedy decode.
+static void inferenceSpec(AppInferenceContext *context) {
+    if (context->args->prompt == nullptr)
+        throw std::runtime_error("Prompt is required");
+    if (context->args->steps == 0)
+        throw std::runtime_error("Number of steps is required");
+
+    const NnUint vocab = context->header->vocabSize;
+    const NnUint seqLen = context->header->seqLen;
+    const NnUint nBatches = context->args->nBatches;
+    NnUint K = context->args->specNgram;                 // max draft tokens / step
+    if (K + 1 > nBatches) K = nBatches - 1;              // verify batch (K+1) must fit
+    const NnUint specMin = context->args->specMin < 1 ? 1 : context->args->specMin;
+
+    std::vector<int> inputTokensVec(std::strlen(context->args->prompt) + 3);
+    int *inputTokens = inputTokensVec.data();
+    int nInputTokens;
+    context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, true);
+
+    if (nInputTokens > (int)seqLen)
+        throw std::runtime_error("The number of prompt tokens is greater than the sequence length");
+    if (nInputTokens > (int)context->args->steps)
+        throw std::runtime_error("The number of prompt tokens is greater than the number of steps");
+
+    std::vector<int> seq(inputTokens, inputTokens + nInputTokens); // full history (KV truth + PLD corpus)
+
+    NnUint predTotalTime = 0;
+    NnUint pos = 0;
+    printf("%s\n", context->args->prompt);
+
+    // ---- prefill (identical to plain inference) ----
+    for (;;) {
+        long remainingTokens = nInputTokens - 1 - (long)pos;
+        if (remainingTokens <= 0) break;
+        NnUint batchSize = remainingTokens < (long)nBatches ? (NnUint)remainingTokens : nBatches;
+        context->inference->setBatchSize(batchSize);
+        context->inference->setPosition(pos);
+        for (NnUint i = 0; i < batchSize; i++)
+            context->inference->setToken(i, inputTokens[pos + i]);
+        context->inference->forward();
+        pos += batchSize;
+    }
+    fflush(stdout);
+    context->tokenizer->resetDecoder();
+
+    // ---- speculative decode loop ----
+    const NnUint maxPos = std::min(seqLen, context->args->steps);
+    pos = nInputTokens - 1;                 // position of the current (unforwarded) token
+    int token = inputTokens[nInputTokens - 1];
+
+    NnUint nPredTokens = 0, nSpecSteps = 0, nDraftTokens = 0, nAcceptedDraft = 0;
+    NnUint kCur = (K > 0) ? 1u : 0u;   // adaptive draft cap: grows on accept, shrinks on miss
+
+    while (pos < maxPos) {
+        // adaptive draft length: 0 when we keep missing (batch=1, no compute penalty),
+        // with a periodic probe so we re-detect predictable/repetitive stretches.
+        NnUint kAllow = kCur;
+        if (kAllow == 0 && K > 0 && (nSpecSteps % 8u) == 0u) kAllow = 1;
+
+        // --- draft via prompt-lookup: most-recent prior match of the last specMin tokens ---
+        std::vector<int> draft;
+        NnUint nseq = (NnUint)seq.size();
+        if (kAllow > 0 && nseq >= specMin) {
+            for (long start = (long)nseq - (long)specMin - 1; start >= 0; start--) {
+                bool match = true;
+                for (NnUint j = 0; j < specMin; j++)
+                    if (seq[start + j] != seq[nseq - specMin + j]) { match = false; break; }
+                if (match) {
+                    NnUint from = (NnUint)start + specMin;
+                    for (NnUint d = 0; d < kAllow && from + d < nseq; d++)
+                        draft.push_back(seq[from + d]);
+                    break;
+                }
+            }
+        }
+        NnUint kd = (NnUint)draft.size();
+        while (kd > 0 && pos + kd >= maxPos) { draft.pop_back(); kd--; }   // keep positions in range
+        NnUint B = 1 + kd;
+
+        // --- one batched forward verifies token + all drafts ---
+        context->inference->setBatchSize(B);
+        context->inference->setPosition(pos);
+        context->inference->setToken(0, token);
+        for (NnUint i = 0; i < kd; i++)
+            context->inference->setToken(i + 1, draft[i]);
+        context->inference->forward();
+        nSpecSteps++;
+        nDraftTokens += kd;
+
+        // a[0] = true next token (always accept)
+        int a0 = context->sampler->sample(context->inference->logitsPipe);
+        seq.push_back(a0);
+        { char *piece = context->tokenizer->decode(a0); if (piece) printf("%s", piece); }
+        nPredTokens++; pos++; token = a0;
+
+        // accept drafts while they match the model's argmax at each verified position
+        NnUint accThis = 0;
+        for (NnUint i = 1; i <= kd && pos < maxPos; i++) {
+            if (draft[i - 1] != token) break;             // draft[i-1] guessed position pos -> true is `token`
+            int ai = context->sampler->sample(context->inference->logitsPipe + (size_t)i * vocab);
+            seq.push_back(ai);
+            { char *piece = context->tokenizer->decode(ai); if (piece) printf("%s", piece); }
+            nPredTokens++; nAcceptedDraft++; accThis++; pos++; token = ai;
+        }
+        // adapt: grow fast when all drafts hit, shrink when none hit (-> 0 = no penalty)
+        if (kd > 0) {
+            if (accThis == kd)      kCur = (kCur + 2 < K) ? kCur + 2 : K;
+            else if (accThis == 0)  kCur = (kCur > 0) ? kCur - 1 : 0;
+        }
+        fflush(stdout);
+        predTotalTime += context->executor->getTotalTime(STEP_EXECUTE_OP) + context->executor->getTotalTime(STEP_SYNC_NODES);
+    }
+
+    float predTotalTimeMs = predTotalTime / 1000.0f;
+    printf("\n\n");
+    printf("Prediction (speculative ngram=%u min=%u)\n", context->args->specNgram, specMin);
+    printf("    nTokens: %u\n", nPredTokens);
+    printf("     nSteps: %u\n", nSpecSteps);
+    printf("     accept: %u/%u drafts  (avg %.2f tok/step)\n",
+        nAcceptedDraft, nDraftTokens, nSpecSteps ? (float)nPredTokens / (float)nSpecSteps : 0.0f);
+    printf("   tokens/s: %3.2f (%3.2f ms/tok)\n",
+        predTotalTimeMs > 0 ? (nPredTokens * 1000) / predTotalTimeMs : 0.0f,
+        nPredTokens ? predTotalTimeMs / (float)nPredTokens : 0.0f);
+}
+
 static NnUint readStdin(const char *guide, char *buffer, NnUint size) {
     std::fflush(stdin);
     std::printf("%s", guide);
@@ -266,7 +396,10 @@ int main(int argc, char **argv) {
         AppCliArgs args = AppCliArgs::parse(argc, argv, true);
         if (std::strcmp(args.mode, "inference") == 0) {
             args.benchmark = true;
-            runInferenceApp(&args, &inference);
+            if (args.specNgram > 0)
+                runInferenceApp(&args, &inferenceSpec);
+            else
+                runInferenceApp(&args, &inference);
         } else if (std::strcmp(args.mode, "perplexity") == 0)
             runInferenceApp(&args, &perplexity);
         else if (std::strcmp(args.mode, "chat") == 0)

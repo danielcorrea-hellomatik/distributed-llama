@@ -32,6 +32,8 @@ public:
     NnUint maxSeqLen;
     bool netTurbo;
     NnUint tileSync;  // Phase B: 0 = legacy sync; >0 = tile-overlap sync with K=tileSync tiles per slice
+    NnUint specNgram; // Lossless prompt-lookup speculative decoding: max draft tokens per step (0 = disabled)
+    NnUint specMin;   // n-gram match length for prompt-lookup drafting (default 2)
     int gpuIndex;
     int gpuSegmentFrom;
     int gpuSegmentTo;

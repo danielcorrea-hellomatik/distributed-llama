@@ -45,6 +45,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.maxSeqLen = 0;
     args.netTurbo = true;
     args.tileSync = 0;  // 0 = legacy; >0 enables Phase B tiled sync
+    args.specNgram = 0; // 0 = disabled; >0 = prompt-lookup speculative decoding (lossless)
+    args.specMin = 2;   // n-gram match length for drafting
     args.gpuIndex = -1;
     args.gpuSegmentFrom = -1;
     args.gpuSegmentTo = -1;
@@ -129,6 +131,10 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.nBatches = (NnUint)atoi(value);
         } else if (std::strcmp(name, "--tile-sync") == 0) {
             args.tileSync = (NnUint)atoi(value);
+        } else if (std::strcmp(name, "--spec-ngram") == 0) {
+            args.specNgram = (NnUint)atoi(value);
+        } else if (std::strcmp(name, "--spec-min") == 0) {
+            args.specMin = (NnUint)atoi(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
