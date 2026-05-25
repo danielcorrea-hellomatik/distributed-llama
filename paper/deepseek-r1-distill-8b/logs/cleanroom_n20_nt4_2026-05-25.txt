@@ -1,0 +1,24 @@
+# n=20 clean-room nt4 decode | binsha 36e4d0d84a841401 | start 2026-05-25T13:13:27Z
+# warmups x2
+run 1: prefill=8.28 decode=8.41
+run 2: prefill=9.61 decode=8.38
+run 3: prefill=8.10 decode=8.39
+run 4: prefill=8.68 decode=8.31
+run 5: prefill=9.59 decode=8.30
+run 6: prefill=9.79 decode=8.32
+run 7: prefill=8.41 decode=8.28
+run 8: prefill=9.04 decode=8.33
+run 9: prefill=9.85 decode=8.31
+run 10: prefill=8.56 decode=8.30
+run 11: prefill=9.62 decode=8.32
+run 12: prefill=9.81 decode=8.30
+run 13: prefill=9.43 decode=8.30
+run 14: prefill=8.58 decode=8.27
+run 15: prefill=9.81 decode=8.32
+run 16: prefill=9.86 decode=8.36
+run 17: prefill=8.57 decode=8.34
+run 18: prefill=9.60 decode=8.31
+run 19: prefill=8.88 decode=8.27
+run 20: prefill=7.70 decode=8.31
+# end 2026-05-25T13:34:18Z
+DONE

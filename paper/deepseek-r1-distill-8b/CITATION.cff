@@ -1,0 +1,55 @@
+cff-version: 1.2.0
+message: "If you use this report or its data, please cite it as below."
+title: >-
+  Shackled to the Machine: A DeepSeek-R1-8B Record on
+  Four Raspberry Pi 5
+abstract: >-
+  We evaluate CPU-only distributed inference of DeepSeek-R1-Distill-Llama-8B
+  (dense 8B, Q40) on a four-node Raspberry Pi 5 (16 GB) cluster running
+  distributed-llama. A clean-room measurement at the optimal thread count
+  sustains 8.32 tok/s decode (n=20, 95% CI [8.30, 8.34]), bit-exact -- to our
+  knowledge the best published figure for this model on Raspberry Pi 5, 29%
+  above the prior four-node record (6.43 tok/s) and 37% above the Seeed Studio
+  configuration (6.06 tok/s). We attribute the gain by layer: the production
+  binary is byte-identical to clean upstream, so the source/kernel changes
+  contribute approximately zero to dense decode (they add 86% to prefill and
+  15.2% to a 30B Mixture-of-Experts model in the companion report). Dense decode
+  is bound by memory bandwidth; the gains live in the hardware and
+  operating-system layers, not the application kernels. We frame inference
+  optimisation as a three-layer stack (hardware/firmware, operating system,
+  application software) and argue for profiling the binding constraint and
+  tuning the layer it lives in. We additionally describe a bit-exact, adaptive
+  prompt-lookup speculative decoder and a controlled dense-vs-MoE contrast on
+  identical silicon.
+type: report
+authors:
+  - family-names: "Correa Villa"
+    given-names: "Daniel"
+    email: "daniel.correa@hellomatik.com"
+    affiliation: "HELLOMATIK.COM"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # TODO: add your ORCID before upload
+date-released: "2026-05-25"
+version: "1.0"
+license: CC-BY-4.0
+keywords:
+  - distributed inference
+  - large language models
+  - Raspberry Pi
+  - edge AI
+  - CPU inference
+  - memory bandwidth
+  - roofline model
+  - DeepSeek-R1
+  - quantization
+  - speculative decoding
+  - bit-exact reproducibility
+  - performance engineering
+  - distributed-llama
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.0000000"   # TODO: replace with the Zenodo DOI minted on upload
+    description: "This report (DeepSeek-R1-Distill-8B on 4x Raspberry Pi 5)"
+  - type: doi
+    value: "10.5281/zenodo.20357376"
+    description: "Companion report: Pushing Four Raspberry Pis to the Memory Wall (Qwen3-30B-A3B)"
+repository-code: "https://github.com/b4rtaz/distributed-llama"

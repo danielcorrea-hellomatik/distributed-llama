@@ -1,0 +1,39 @@
+{
+  "title": "Shackled to the Machine: A DeepSeek-R1-8B Record on Four Raspberry Pi 5",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "access_right": "open",
+  "license": "cc-by-4.0",
+  "language": "eng",
+  "creators": [
+    {
+      "name": "Correa Villa, Daniel",
+      "affiliation": "HELLOMATIK.COM"
+    }
+  ],
+  "description": "<p>We evaluate CPU-only distributed inference of DeepSeek-R1-Distill-Llama-8B (dense 8B, Q40) on a four-node Raspberry Pi 5 (16 GB) cluster running distributed-llama. A clean-room measurement at the optimal thread count sustains <strong>8.32 tok/s decode</strong> (n=20, 95% CI [8.30, 8.34]), bit-exact &mdash; to our knowledge the best published figure for this model on Raspberry Pi 5, <strong>29% above the prior four-node record</strong> (6.43 tok/s) and 37% above the Seeed Studio configuration (6.06 tok/s). Decode throughput is shown to fall roughly linearly with context length as the KV-cache grows (the 8.32 figure is the short-context peak).</p><p>We attribute the gain by layer: the production binary is byte-identical to clean upstream, so the source/kernel changes contribute <strong>approximately zero to dense decode</strong> (they add 86% to prefill and 15.2% to a 30B Mixture-of-Experts model in the companion report). Dense decode is bound by memory bandwidth; the gains live in the hardware and operating-system layers, not the application kernels. We frame inference optimisation as a three-layer stack (hardware/firmware, operating system, application software): profile the binding constraint, then tune the layer it lives in. We additionally describe a bit-exact, adaptive prompt-lookup speculative decoder and a controlled dense-vs-MoE contrast on identical silicon. All figures are bit-exact (SHA-256 of the generated token-id stream at temperature 0, seed 42); no overclocking, quantisation change, or model substitution is used. Raw benchmark data and LaTeX sources are included.</p>",
+  "keywords": [
+    "distributed inference",
+    "large language models",
+    "Raspberry Pi",
+    "edge AI",
+    "CPU inference",
+    "memory bandwidth",
+    "roofline model",
+    "DeepSeek-R1",
+    "quantization",
+    "speculative decoding",
+    "bit-exact reproducibility",
+    "performance engineering",
+    "distributed-llama"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.20357376",
+      "relation": "isPartOf",
+      "scheme": "doi",
+      "resource_type": "publication-report"
+    }
+  ],
+  "notes": "Companion to 'Pushing Four Raspberry Pis to the Memory Wall' (Qwen3-30B-A3B, DOI 10.5281/zenodo.20357376). TODO before upload: add ORCID, and replace the placeholder DOI in CITATION.cff with the DOI Zenodo mints on publish."
+}

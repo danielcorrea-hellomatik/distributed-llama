@@ -1,0 +1,13 @@
+# LaTeX build artifacts (top-level only; data .out files in logs/ are kept)
+/*.aux
+/*.log
+/*.out
+/*.toc
+/*.bbl
+/*.blg
+/*.bcf
+/*.run.xml
+/*.fls
+/*.fdb_latexmk
+/missfont.log
+.DS_Store

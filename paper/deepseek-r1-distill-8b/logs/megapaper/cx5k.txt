@@ -1,0 +1,6 @@
+# complex 5k-token stress | binsha 36e4d0d84a841401 | steps=5000 maxseq=8192 nt=4 | start 2026-05-25T14:24:47Z
+# initial settle 25s
+# warmup x1
+[1/7] math-proof : prefill=9.46 decode=6.33 nTokens=4958 words=79567
+[2/7] code-btree : prefill=9.34 decode=6.17 nTokens=4962 words=79526
+[3/7] reasoning-puzzle : prefill=9.24 decode=6.15 nTokens=4955 words=79111
