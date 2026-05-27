@@ -28,7 +28,7 @@ authors:
     email: "daniel.correa@hellomatik.com"
     affiliation: "HELLOMATIK.COM"
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # TODO: add your ORCID before upload
-date-released: "2026-05-25"
+date-released: "2026-05-27"
 version: "1.0"
 license: CC-BY-4.0
 keywords:
@@ -47,7 +47,7 @@ keywords:
   - distributed-llama
 identifiers:
   - type: doi
-    value: "10.5281/zenodo.0000000"   # TODO: replace with the Zenodo DOI minted on upload
+    value: "10.5281/zenodo.20411979"
     description: "This report (DeepSeek-R1-Distill-8B on 4x Raspberry Pi 5)"
   - type: doi
     value: "10.5281/zenodo.20357376"
